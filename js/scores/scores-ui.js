@@ -5,9 +5,11 @@
 
 import { listScores, getScore, saveScore, deleteScore, importPdf, openPdf, renderPage, takeSharedFiles } from './scores.js';
 import { createMiniMetronome } from '../metronome/metronome-ui.js';
+import { loadMap } from './map-store.js';
+import { openMapEditor, closeMapEditor } from './map-editor.js';
 import { isQuotaError } from '../storage/db.js';
 import { holdWakeLock, releaseWakeLock } from '../util/wakelock.js';
-import { $, escapeHtml, toast } from '../util/dom.js';
+import { $, escapeHtml, toast, navigate } from '../util/dom.js';
 
 const SWIPE_PX = 50;
 const TAP_PX = 10;
@@ -47,11 +49,14 @@ export function mount(el) {
         <button class="btn icon v-back" aria-label="Back to scores"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
         <div class="v-title"></div>
         <div class="v-page" aria-live="polite"></div>
+        <button class="btn v-map" title="Rows, barlines and playing order for auto-scroll">Map</button>
+        <button class="btn v-practice" title="Open in Practice to auto-scroll and record">Practice</button>
         <button class="btn icon v-full" aria-label="Full screen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
       </div>
       <div class="page-stage" tabindex="0" aria-label="Score page. Tap left or right to turn."></div>
       <div class="mini-slot"></div>
-    </div>`;
+    </div>
+    <div class="map-editor-host" hidden></div>`;
   for (const slot of el.querySelectorAll('.mini-slot')) createMiniMetronome(slot);
 
   $('.add-score input', el).addEventListener('change', async (e) => {
@@ -61,6 +66,8 @@ export function mount(el) {
   });
   $('.score-list', el).addEventListener('click', onListClick);
   $('.v-back', el).addEventListener('click', closeViewer);
+  $('.v-map', el).addEventListener('click', () => score && showMapEditor());
+  $('.v-practice', el).addEventListener('click', () => score && navigate('practice', { scoreId: score.id }));
   $('.v-full', el).addEventListener('click', () => setImmersive(!document.body.classList.contains('immersive')));
 
   const stage = $('.page-stage', el);
@@ -74,8 +81,13 @@ export function mount(el) {
   addEventListener('resize', onResize);
 }
 
-export async function enter({ files } = {}) {
+export async function enter({ files, scoreId, editMap } = {}) {
   active = true;
+  if (scoreId) {
+    if (score?.id !== scoreId) await openViewer(scoreId);
+    if (editMap && score) showMapEditor();
+    return;
+  }
   if (score) holdWakeLock('score');
   const shared = [...(files ?? []), ...(await takeSharedFiles().catch(() => []))];
   if (shared.length) await importFiles(shared);
@@ -150,6 +162,8 @@ async function onListClick(e) {
 }
 
 async function openViewer(id) {
+  closeMapEditor();
+  $('.map-editor-host', root).hidden = true;
   closeDocument();
   try {
     score = await getScore(id);
@@ -173,7 +187,33 @@ async function openViewer(id) {
   $('.page-stage', root).focus({ preventScroll: true });
 }
 
+async function showMapEditor() {
+  const s = score, doc = pdf;
+  const host = $('.map-editor-host', root);
+  setImmersive(false);
+  toast('Loading map…');
+  let found;
+  try {
+    found = await loadMap(s, doc, { onProgress: (n, t) => toast(`Finding rows and barlines… page ${n} of ${t}`) });
+  } catch (e) {
+    toast(`Could not load the map: ${e.message}`);
+    return;
+  }
+  if (s !== score) return;
+  $('.score-viewer', root).hidden = true;
+  host.hidden = false;
+  openMapEditor(host, { score: s, pdf: doc, map: found.map, verified: found.verified }, {
+    onClose: () => {
+      host.hidden = true;
+      $('.score-viewer', root).hidden = false;
+      showPage(page);
+    },
+  });
+}
+
 function closeViewer() {
+  closeMapEditor();
+  $('.map-editor-host', root).hidden = true;
   setImmersive(false);
   closeDocument();
   releaseWakeLock('score');

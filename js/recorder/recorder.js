@@ -48,9 +48,12 @@ addEventListener('beforeunload', (e) => {
  * Start recording. Capture begins immediately, so a count-in is part of the
  * take. If the metronome is running it restarts in sync with the count-in and
  * keeps clicking; otherwise it only clicks the count-in.
+ * `startMetronome(countInBars)`, if given, starts the clicks instead (score
+ * auto-scroll) and returns the first beat's AudioContext time. `score`
+ * ({ scoreId, startMeasure }) links the take to a score.
  * Rejects with the getUserMedia error if the mic can't be opened.
  */
-export async function startRecording({ countInBars = 0 } = {}) {
+export async function startRecording({ countInBars = 0, startMetronome = null, score = null } = {}) {
   if (session) return session;
   const input = await acquireInput('recorder');
   try {
@@ -66,6 +69,7 @@ export async function startRecording({ countInBars = 0 } = {}) {
       sampleRate: ctx.sampleRate,
       lengthSamples: 0,
       status: 'recording',
+      ...(score ?? {}),
     };
     await saveRecording(rec); // first, so a crash leaves a recoverable entry
 
@@ -82,6 +86,8 @@ export async function startRecording({ countInBars = 0 } = {}) {
       error: null,
       firstBeatTime: null,
       ownsMetronome: false,
+      startTime: null,
+      bars: [],
       stopping: null,
       onStopped: null,
     };
@@ -90,7 +96,11 @@ export async function startRecording({ countInBars = 0 } = {}) {
     node.port.postMessage('start');
 
     const clicking = metronome.running;
-    if (clicking || countInBars > 0) {
+    if (startMetronome) {
+      s.firstBeatTime = startMetronome(countInBars);
+      s.ownsMetronome = true;
+      Object.assign(rec, { tempo: metronome.bpm, timeSig: metronome.timeSig });
+    } else if (clicking || countInBars > 0) {
       s.firstBeatTime = metronome.countIn(countInBars, { keepClicking: clicking });
       s.ownsMetronome = !clicking;
       Object.assign(rec, { tempo: metronome.bpm, timeSig: metronome.timeSig });
@@ -108,6 +118,7 @@ export async function startRecording({ countInBars = 0 } = {}) {
 function onWorkletMessage(s, msg) {
   if (msg.type === 'started') {
     const startTime = msg.frame / s.rec.sampleRate;
+    s.startTime = startTime;
     if (s.firstBeatTime != null) s.rec.firstBeatSec = Math.max(0, s.firstBeatTime - startTime);
   } else if (msg.type === 'chunk') {
     append(s, msg.data);
@@ -149,6 +160,11 @@ function writeChunk(s, data) {
   });
 }
 
+/** Note that bar `measureIndex` of the linked score starts at AudioContext time `time`. */
+export function recordBar(time, measureIndex) {
+  session?.bars.push([time, measureIndex]);
+}
+
 /**
  * Stop and finalize. Resolves to { rec, error }; rec is null if nothing was
  * captured. error is set if storage failed (the take keeps what was saved).
@@ -178,6 +194,11 @@ export function stopRecording() {
       return { rec: null, error: s.error };
     }
     const rec = { ...s.rec, lengthSamples: s.writtenSamples, status: 'done' };
+    if (s.bars.length && s.startTime != null) {
+      // Bar starts in seconds from the start of the take, for re-scrolling on playback.
+      const end = rec.lengthSamples / rec.sampleRate;
+      rec.scoreTrack = s.bars.map(([t, i]) => [Math.round((t - s.startTime) * 1000) / 1000, i]).filter(([t]) => t >= 0 && t < end);
+    }
     try {
       await saveRecording(rec);
     } catch (e) {

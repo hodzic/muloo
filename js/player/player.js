@@ -10,7 +10,10 @@ import { encodeWav } from '../util/wav.js';
 import { computePeaks, drawWaveform } from '../editor/waveform.js';
 import { holdWakeLock, releaseWakeLock } from '../util/wakelock.js';
 import { openShareDialog, openDetailsDialog } from '../library/dialogs.js';
-import { getScore } from '../scores/scores.js';
+import { getScore, openPdf } from '../scores/scores.js';
+import { loadMap } from '../scores/map-store.js';
+import { flatten } from '../scores/score-map.js';
+import { FollowView } from '../scores/follow-view.js';
 import { $, escapeHtml, onPressRepeat, toast } from '../util/dom.js';
 
 export const SPEED_MIN = 0.5;
@@ -40,6 +43,7 @@ let levelBuf = null;
 let drag = null;
 let onCloseCb = null;
 let onEditCb = null;
+let follow = null; // { view, pdf, track } while the score re-scrolls with playback
 let colors = null;
 
 const COLORS = () => {
@@ -108,6 +112,7 @@ export async function openPlayer(host, id, { onClose, onEdit } = {}) {
   if (loop.on) audio.currentTime = loop.a;
 
   renderTitle();
+  $('.p-score', root).hidden = !(rec.scoreId && rec.scoreTrack?.length);
   $('.dur', root).textContent = fmt(duration);
   resizeCanvas();
   renderControls();
@@ -119,6 +124,7 @@ export async function openPlayer(host, id, { onClose, onEdit } = {}) {
 /** Close the player without leaving a trace (no callback). */
 export function closePlayer() {
   if (!rec && !root) return;
+  closeScore();
   flushSave();
   cancelAnimationFrame(raf);
   removeEventListener('resize', resizeCanvas);
@@ -151,6 +157,58 @@ async function renderTitle() {
   ].filter(Boolean).join(' · ');
 }
 
+// Re-scroll on playback: the score follows the bar times recorded with the take.
+
+async function toggleScore() {
+  if (follow) { closeScore(); return; }
+  const r = rec;
+  const btn = $('.p-score', root);
+  btn.disabled = true;
+  try {
+    const score = await getScore(r.scoreId);
+    if (!score) throw new Error('the linked score was deleted');
+    const pdf = await openPdf(new Uint8Array(await score.blob.arrayBuffer()));
+    const { map } = await loadMap(score, pdf);
+    if (rec !== r && rec?.id !== r.id) { pdf.destroy(); return; }
+    const flat = flatten(map);
+    const track = r.scoreTrack.filter(([, i]) => i < flat.measures.length);
+    if (!track.length) throw new Error('the score map changed since this take');
+    const host = $('.p-score-view', root);
+    host.hidden = false;
+    const view = new FollowView(host, { pdf, flat, indices: track.map(([, i]) => i), rows: 1, onTap: (i, pos) => { if (pos >= 0) seek(track[pos][0]); } });
+    follow = { view, pdf, track, flat };
+    btn.classList.add('selected');
+    btn.setAttribute('aria-pressed', 'true');
+  } catch (e) {
+    toast(`Can't show the score: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function closeScore() {
+  if (!follow) return;
+  follow.view.destroy();
+  follow.pdf.destroy();
+  follow = null;
+  if (root) {
+    $('.p-score-view', root).hidden = true;
+    $('.p-score', root).classList.remove('selected');
+    $('.p-score', root).setAttribute('aria-pressed', 'false');
+  }
+}
+
+/** Score position at playback time t from the recorded bar times. */
+function trackPosition(t) {
+  const tr = follow.track;
+  let k = 0;
+  while (k + 1 < tr.length && tr[k + 1][0] <= t) k++;
+  if (t < tr[0][0]) return { playPos: 0, frac: 0 };
+  const m = follow.flat.measures[tr[k][1]];
+  const dur = k + 1 < tr.length ? tr[k + 1][0] - tr[k][0] : (m.beats * 60) / (rec.tempo || m.bpm);
+  return { playPos: k, frac: Math.max(0, Math.min(0.999, (t - tr[k][0]) / dur)) };
+}
+
 async function editDetails() {
   const patch = await openDetailsDialog(rec);
   if (!patch || !rec) return;
@@ -172,9 +230,11 @@ function markup() {
       <div class="player-head">
         <button class="btn icon p-back" aria-label="Back to recordings">${svg('M15 5l-7 7 7 7')}</button>
         <button class="player-title p-details" aria-label="Rename or link to a score"><div class="p-name rec-name"></div><div class="p-meta rec-meta"></div></button>
+        <button class="btn icon p-score" aria-label="Show the score" aria-pressed="false" hidden>${svg('M9 18V5l11-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM20 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z')}</button>
         <button class="btn icon p-edit" aria-label="Edit">${svg('M6 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM6 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7.5 7.5L20 18M7.5 16.5L20 6')}</button>
         <button class="btn icon p-share" aria-label="Share">${svg('M12 3v12M7 8l5-5 5 5M5 13v7h14v-7')}</button>
       </div>
+      <div class="p-score-view" hidden></div>
       <div class="wave-wrap"><canvas class="wave" aria-label="Waveform. Tap to seek, drag to set the loop."></canvas></div>
       <div class="out-level" aria-hidden="true"><div class="out-fill"></div></div>
       <div class="times"><span class="pos">0:00.0</span><span class="loop-times"></span><span class="dur"></span></div>
@@ -201,6 +261,7 @@ function markup() {
 function bind() {
   $('.p-back', root).addEventListener('click', close);
   $('.p-details', root).addEventListener('click', editDetails);
+  $('.p-score', root).addEventListener('click', toggleScore);
   $('.p-share', root).addEventListener('click', () => {
     if (!rec) return;
     flushSave();
@@ -407,6 +468,7 @@ function frame() {
   }
 
   $('.pos', root).textContent = fmt(t);
+  if (follow) follow.view.setPosition(trackPosition(t));
   if (peaks && duration > 0) {
     drawWaveform($('.wave', root), peaks, {
       a: loop.a != null ? loop.a / duration : null,

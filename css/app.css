@@ -418,3 +418,71 @@ dialog input[type="text"] { min-height: var(--tap); padding: 0 12px; border-radi
 .beat-display.green .beat-rate { color: var(--good); }
 .beat-sub { font-size: 15px; font-variant-numeric: tabular-nums; }
 .beat-hint { font-size: 16px; font-weight: 600; text-align: center; min-height: 1.4em; }
+
+/* Auto-scroll view */
+.follow { position: relative; width: 100%; height: 100%; overflow: hidden; background: #fff; border-radius: 6px; touch-action: none; user-select: none; }
+.follow-rows { position: absolute; inset: 0; }
+.follow-row { position: absolute; left: 0; right: 0; top: 0; overflow: hidden; transition: transform var(--glide, 0ms) ease, opacity var(--glide, 0ms) ease; }
+.follow-inner { position: absolute; top: 0; left: 0; height: 100%; will-change: transform; }
+.follow-inner canvas { display: block; }
+.follow-highlight { position: absolute; top: 0; bottom: 0; background: rgb(255 159 28 / 0.18); border-left: 2px solid rgb(255 159 28 / 0.6); pointer-events: none; }
+.follow-loop { position: absolute; top: 0; height: 6px; background: rgb(61 220 132 / 0.8); pointer-events: none; }
+.follow-playhead { position: absolute; top: 0; left: 0; width: 3px; margin-left: -1px; background: var(--accent); pointer-events: none; }
+.follow-cue { position: absolute; top: 8px; right: 8px; padding: 4px 10px; border-radius: 8px; background: rgb(0 0 0 / 0.75); color: #fff; font-weight: 700; font-size: 18px; pointer-events: none; }
+.follow-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #555; }
+
+/* Practice with a score */
+.score-toolbar { display: flex; flex-direction: column; gap: 6px; }
+.ps-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ps-tools .btn { padding: 0 12px; }
+.ps-rows .btn { padding: 0 10px; }
+.ps-ramp { display: flex; align-items: center; gap: 4px; font-size: 14px; color: var(--muted); }
+.ps-ramp input { width: 56px; min-height: var(--tap); padding: 0 6px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; }
+.ps-status { font-size: 13px; min-height: 1.3em; }
+.score-stage { flex: 3; min-height: 160px; }
+.stage.compact { flex: none; min-height: 0; flex-direction: row; justify-content: flex-start; gap: 12px; padding: 6px 12px; border-radius: var(--radius); }
+.stage.compact .stage-timer { font-size: 22px; }
+.stage.compact .hint { display: none; }
+.stage.compact .meter { height: 12px; }
+.stage.compact .rec-badge { position: static; }
+.stage.compact .count-in-overlay { font-size: 32px; border-radius: var(--radius); }
+body.practice-full .topbar, body.practice-full .tabbar, body.practice-full .input-row, body.practice-full .ps-tools, body.practice-full .ps-score, body.practice-full .bt-warning { display: none; }
+body.practice-full main { padding: 4px 8px; }
+body.practice-full .practice { gap: 6px; }
+
+/* Player score view */
+.p-score-view { height: 120px; flex: none; }
+.p-score.selected { color: var(--accent); }
+
+/* Map editor */
+.map-editor-host { flex: 1; display: flex; flex-direction: column; }
+.map-editor { flex: 1; display: flex; flex-direction: column; gap: 8px; position: relative; }
+.me-modes .btn { padding: 0 6px; }
+.me-help { margin: 0; font-size: 13px; }
+.me-pagebar { display: flex; align-items: center; justify-content: center; gap: 12px; font-size: 14px; color: var(--muted); }
+.me-page { position: relative; background: #fff; border-radius: 4px; overflow: hidden; }
+.me-canvas canvas { display: block; }
+.me-overlay { position: absolute; inset: 0; touch-action: none; }
+.me-row { position: absolute; left: 0; right: 0; background: rgb(255 159 28 / 0.12); border-top: 2px solid rgb(255 159 28 / 0.7); border-bottom: 2px solid rgb(255 159 28 / 0.7); pointer-events: none; }
+.me-row.active { background: rgb(255 159 28 / 0.2); }
+.me-bar { position: absolute; width: 0; border-left: 2px solid rgb(30 120 255 / 0.75); pointer-events: none; }
+.me-bar.edge { border-left-style: dashed; }
+.me-bar.active { border-left-width: 3px; }
+.me-num { position: absolute; font: 600 10px system-ui, sans-serif; color: #1e5bd8; pointer-events: none; }
+.me-chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 40vh; overflow-y: auto; }
+.chip { min-width: var(--tap); min-height: 40px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; font-size: 14px; }
+.chip.marked { border-color: var(--accent); }
+.chip small { color: var(--accent); }
+.me-order-panel { display: flex; flex-direction: column; gap: 8px; }
+.me-order-panel label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; }
+.me-order-panel input, .me-details-panel input, .me-details-panel select { min-height: var(--tap); padding: 0 12px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; }
+.me-preview { font-size: 13px; word-break: break-word; margin: 0; }
+.me-order-error { margin: 0; }
+.me-details-panel .row label { flex: 1; }
+.me-popover { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; display: flex; flex-direction: column; gap: 10px; z-index: 5; box-shadow: 0 -8px 24px rgb(0 0 0 / 0.5); }
+.me-marks { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; }
+.me-marks label { display: flex; align-items: center; gap: 8px; min-height: 36px; }
+.me-popover .row label { display: flex; flex-direction: column; gap: 4px; flex: 1; font-size: 14px; }
+.me-popover input, .me-popover select { min-height: 40px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; }
+.viewer-head .btn:not(.icon) { padding: 0 10px; }
+.ps-rows .btn { white-space: nowrap; }

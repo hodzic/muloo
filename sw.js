@@ -1,7 +1,7 @@
 // Service worker: cache-first, versioned (DESIGN.md §8).
 // Bump CACHE whenever a shell file changes so clients get the update toast.
 
-const CACHE = 'gp-v6';
+const CACHE = 'gp-v7';
 const INBOX = 'muloo-inbox';
 
 const SHELL = [
@@ -32,6 +32,14 @@ const SHELL = [
   'vendor/webm-muxer/webm-muxer.mjs',
   'js/scores/scores.js',
   'js/scores/scores-ui.js',
+  'js/scores/score-map.js',
+  'js/scores/detect.js',
+  'js/scores/map-store.js',
+  'js/scores/map-editor.js',
+  'js/scores/follow.js',
+  'js/scores/follow-view.js',
+  'js/practice/practice-score.js',
+  'vendor/pdf-lib/pdf-lib.esm.min.js',
   'vendor/pdfjs/pdf.min.mjs',
   'vendor/pdfjs/pdf.worker.min.mjs',
   'vendor/pdfjs/standard_fonts/FoxitDingbats.pfb',

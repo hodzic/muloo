@@ -1,7 +1,8 @@
-// Tuner tab, standard mode (DESIGN.md §5.1).
+// Tuner tab: standard mode (DESIGN.md §5.1) and beat mode (§5.2, beats-ui.js).
 
 import { yin, rms, median, noteInfo, parseNote, midiToFreq, cents, noteName, noteOctave } from './pitch.js';
 import { INSTRUMENTS, getPreset, defaultPresetKey } from './presets.js';
+import { mountBeats, renderBeats, startBeats, stopBeats } from './beats-ui.js';
 import { acquireInput, releaseInput, getInput, gainToDb } from '../audio/input.js';
 import { canStartAudio } from '../audio/context.js';
 import { settings } from '../storage/db.js';
@@ -37,6 +38,11 @@ export function mount(el) {
   root = el;
   el.innerHTML = `
     <div class="tuner">
+      <div class="segmented tuner-mode" role="radiogroup" aria-label="Tuner mode">
+        <button class="btn" data-tuner-mode="standard" role="radio">Standard</button>
+        <button class="btn" data-tuner-mode="beats" role="radio">Beats</button>
+      </div>
+      <div class="beats-panel" hidden></div>
       <div class="tuner-display idle">
         <div class="note"><span class="note-name">–</span><span class="note-oct"></span></div>
         <svg class="gauge" viewBox="-110 -110 220 125" aria-hidden="true">
@@ -70,6 +76,16 @@ export function mount(el) {
         </div>
       </div>
     </div>`;
+
+  mountBeats($('.beats-panel', el));
+  $$('[data-tuner-mode]', el).forEach((b) => b.addEventListener('click', () => {
+    settings.set('tuner.mode', b.dataset.tunerMode);
+    renderMode();
+    if (active && getInput()) {
+      if (beatMode()) startBeats(); else stopBeats();
+    }
+  }));
+  renderMode();
 
   $$('[data-instrument]', el).forEach((b) => b.addEventListener('click', () => {
     const instrument = b.dataset.instrument;
@@ -123,6 +139,21 @@ function renderSettings() {
   sel.value = INSTRUMENTS[instrument].presets[preset] ? preset : defaultPresetKey(instrument);
   $('.a4-value', root).textContent = `A4 = ${a4} Hz`;
   renderStrings();
+  renderBeats();
+}
+
+const beatMode = () => settings.get('tuner.mode', 'standard') === 'beats';
+
+function renderMode() {
+  const beats = beatMode();
+  $$('[data-tuner-mode]', root).forEach((b) => {
+    const on = (b.dataset.tunerMode === 'beats') === beats;
+    b.classList.toggle('selected', on);
+    b.setAttribute('aria-checked', on);
+  });
+  $('.beats-panel', root).hidden = !beats;
+  $('.tuner-display', root).hidden = beats;
+  $('.strings', root).hidden = beats;
 }
 
 function renderStrings(activeMidi = shownMidi) {
@@ -153,6 +184,7 @@ export async function enter() {
 export function leave() {
   active = false;
   cancelAnimationFrame(raf);
+  stopBeats();
   releaseInput('tuner');
   releaseWakeLock('tuner');
 }
@@ -177,6 +209,7 @@ async function start() {
   lastValid = 0;
   cancelAnimationFrame(raf);
   raf = requestAnimationFrame(loop);
+  if (beatMode()) startBeats();
 }
 
 function showMessage(text, action) {
@@ -193,7 +226,7 @@ function hideMessage() {
 function loop(now) {
   if (!active) return;
   raf = requestAnimationFrame(loop);
-  if (now - lastAnalysis < ANALYSIS_MS) return;
+  if (beatMode() || now - lastAnalysis < ANALYSIS_MS) return;
   lastAnalysis = now;
   const input = getInput();
   if (!input) return;

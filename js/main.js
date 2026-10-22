@@ -43,8 +43,11 @@ function show(tab, detail) {
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   let reloading = false;
+  // The first install also fires controllerchange (clients.claim); only an
+  // update replacing a running worker should reload.
+  const hadController = !!navigator.serviceWorker.controller;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloading) return;
+    if (reloading || !hadController) return;
     reloading = true;
     location.reload();
   });

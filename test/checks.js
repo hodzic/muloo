@@ -1,6 +1,7 @@
 // Synthetic-signal checks shared by test.html and dsp.test.mjs.
 import { yin, cents, noteInfo, parseNote, midiToFreq } from '../js/tuner/pitch.js';
 import { encodeWav, decodeWav, floatToInt16 } from '../js/util/wav.js';
+import { computePeaks } from '../js/editor/waveform.js';
 
 const SR = 48000;
 const N = 4096;
@@ -67,6 +68,17 @@ export function runDspChecks() {
   let same = back.sampleRate === SR && back.samples.length === pcm.length;
   for (let i = 0; same && i < pcm.length; i++) same = pcm[i] === back.samples[i];
   results.push({ name: 'WAV encode → decode round trip is identical', pass: same, detail: `${pcm.length} samples` });
+
+  // Waveform peaks.
+  const ramp = Int16Array.from({ length: 1000 }, (_, i) => i * 32 - 16000);
+  const pk = computePeaks(ramp, 10);
+  const pk2 = computePeaks(new Float32Array([0, 1, -1, 0.5]), 8);
+  results.push({
+    name: 'Waveform peaks per column',
+    pass: pk.min[0] === -16000 / 32768 && pk.max[9] === (999 * 32 - 16000) / 32768 && pk.max[0] === (99 * 32 - 16000) / 32768
+      && pk2.max.length === 8 && pk2.max[2] === 1 && pk2.min[4] === -1,
+    detail: `10 columns over 1000 samples; 8 columns over 4 samples`,
+  });
 
   return results;
 }

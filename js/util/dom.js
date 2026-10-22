@@ -42,3 +42,8 @@ export function formatBytes(n) {
   do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
   return `${n.toFixed(n < 10 ? 1 : 0)} ${u[i]}`;
 }
+
+/** Switch tab from anywhere; main.js handles it. */
+export function navigate(tab, detail = {}) {
+  document.dispatchEvent(new CustomEvent('muloo:navigate', { detail: { tab, ...detail } }));
+}

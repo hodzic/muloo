@@ -6,6 +6,8 @@ import { initSettings } from './settings-ui.js';
 import { createMiniMetronome } from './metronome/metronome-ui.js';
 import * as tuner from './tuner/tuner-ui.js';
 import * as practice from './practice/practice-ui.js';
+import * as library from './library/library-ui.js';
+import { recoverInterrupted } from './storage/recordings.js';
 import * as pitch from './tuner/pitch.js';
 import * as wav from './util/wav.js';
 import { metronome } from './metronome/scheduler.js';
@@ -25,13 +27,17 @@ const VIEWS = {
   tune: { title: 'Tune', module: tuner },
   practice: { title: 'Practice', module: practice },
   scores: { title: 'Scores', module: placeholder('Scores', 'PDF import, the viewer and page turns arrive in milestone 6.', { mini: true }) },
-  recordings: { title: 'Recordings', module: placeholder('Recordings', 'Your takes will be listed here, newest first, once the recorder lands (milestone 4).') },
+  recordings: { title: 'Recordings', module: library },
 };
 
 let currentTab = null;
 
-function show(tab) {
-  if (!VIEWS[tab] || tab === currentTab) return;
+function show(tab, detail) {
+  if (!VIEWS[tab]) return;
+  if (tab === currentTab) {
+    if (detail) VIEWS[tab].module.enter(detail);
+    return;
+  }
   if (currentTab) VIEWS[currentTab].module.leave();
   currentTab = tab;
   for (const [key] of Object.entries(VIEWS)) {
@@ -41,7 +47,7 @@ function show(tab) {
   }
   $('#view-title').textContent = VIEWS[tab].title;
   settings.set('lastTab', tab);
-  VIEWS[tab].module.enter();
+  VIEWS[tab].module.enter(detail);
 }
 
 function registerServiceWorker() {
@@ -74,6 +80,17 @@ async function init() {
 
   for (const [key, view] of Object.entries(VIEWS)) view.module.mount($(`#view-${key}`));
   $$('.tabbar [data-tab]').forEach((b) => b.addEventListener('click', () => show(b.dataset.tab)));
+  document.addEventListener('muloo:navigate', (e) => {
+    const { tab, ...detail } = e.detail;
+    show(tab, detail);
+  });
+
+  try {
+    const recovered = await recoverInterrupted();
+    if (recovered.length) toast(`Recovered ${recovered.length} interrupted recording${recovered.length > 1 ? 's' : ''}.`);
+  } catch (e) {
+    console.warn('Recording recovery failed', e);
+  }
 
   const fromHash = location.hash.slice(1);
   show(VIEWS[fromHash] ? fromHash : settings.get('lastTab', 'tune'));

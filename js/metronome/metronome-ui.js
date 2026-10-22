@@ -50,7 +50,11 @@ function beatDots(el) {
     $$('.dot', el).forEach((d, i) => d.classList.toggle('on', i === ev.beat));
     el.classList.toggle('count-in', ev.countIn);
   });
-  metronome.onChange(() => { if (!metronome.running) $$('.dot', el).forEach((d) => d.classList.remove('on')); });
+  metronome.onChange(() => {
+    if (metronome.running) return;
+    $$('.dot', el).forEach((d) => d.classList.remove('on'));
+    el.classList.remove('count-in');
+  });
 }
 
 function bindCommon(root) {
@@ -108,7 +112,7 @@ export function createMetronomeBar(container, { flashTarget } = {}) {
     $('.subdivision', root).value = metronome.subdivision;
     $('.click-mode', root).value = metronome.clickMode;
     $('.volume', root).value = metronome.volume;
-    $('.start-label', root).textContent = metronome.running ? 'Stop' : 'Start';
+    $('.start-label', root).textContent = 'Metronome';
   };
   refresh();
   metronome.onChange(refresh);

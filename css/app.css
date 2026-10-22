@@ -276,3 +276,40 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
   .gauge { width: 240px; }
   .bpm-value { font-size: 40px; }
 }
+
+/* Recorder */
+.stage { position: relative; gap: 12px; }
+.stage.recording { box-shadow: inset 0 0 0 3px var(--bad); }
+.rec-badge { position: absolute; top: 12px; left: 16px; color: var(--bad); font-weight: 700; letter-spacing: 0.08em; animation: blink 1s steps(2, start) infinite; }
+@keyframes blink { to { visibility: hidden; } }
+.count-in-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 140px; font-weight: 800; color: var(--warn); background: color-mix(in srgb, var(--surface) 85%, transparent); border-radius: 20px; z-index: 1; }
+.stage-timer.near-limit { color: var(--warn); }
+.meter { position: relative; width: 100%; max-width: 420px; height: 28px; border-radius: 6px; background: var(--surface-2); overflow: hidden; }
+.meter-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--good) 0 70%, var(--warn) 70% 90%, var(--bad) 90%); background-size: 420px 100%; }
+.meter-peak { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--text); left: 0; }
+.meter-clip { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; padding: 0 8px; font-size: 12px; font-weight: 800; color: var(--muted); background: var(--surface-2); }
+.meter.clipping .meter-clip { background: var(--bad); color: #fff; }
+.stage .mic-message { background: var(--surface-2); }
+.input-row { display: flex; gap: 8px; align-items: center; }
+.mic-btn { max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.gain { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+.gain output { min-width: 48px; font-variant-numeric: tabular-nums; color: var(--text); }
+.practice > .warn { margin: 0; font-size: 14px; }
+.record-row { display: flex; gap: 8px; }
+.record-row select { flex: 0 0 auto; }
+.btn.record { flex: 1; }
+.btn.record.active { background: var(--bad); border-color: var(--bad); color: #fff; }
+.is-recording .tabbar [data-tab="practice"] { color: var(--bad); }
+
+/* Recordings list */
+.rec-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.rec { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 12px; background: var(--surface); border-radius: var(--radius); border: 1px solid transparent; }
+.rec.highlight { border-color: var(--accent); }
+.rec .play { font-size: 18px; flex: none; }
+.rec.playing .play { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.rec-info { flex: 1; min-width: 0; }
+.rec-name { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-meta { color: var(--muted); font-size: 13px; }
+.tag { font-size: 11px; font-weight: 600; color: var(--warn); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; vertical-align: middle; }
+.rec .delete { flex: none; width: var(--tap); }
+.rec-list .placeholder { list-style: none; margin-top: 30vh; }

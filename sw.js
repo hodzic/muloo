@@ -1,7 +1,7 @@
 // Service worker: cache-first, versioned (DESIGN.md §8).
 // Bump CACHE whenever a shell file changes so clients get the update toast.
 
-const CACHE = 'gp-v3';
+const CACHE = 'gp-v4';
 const INBOX = 'muloo-inbox';
 
 const SHELL = [
@@ -23,6 +23,24 @@ const SHELL = [
   'js/library/library-ui.js',
   'js/player/player.js',
   'js/editor/waveform.js',
+  'js/scores/scores.js',
+  'js/scores/scores-ui.js',
+  'vendor/pdfjs/pdf.min.mjs',
+  'vendor/pdfjs/pdf.worker.min.mjs',
+  'vendor/pdfjs/standard_fonts/FoxitDingbats.pfb',
+  'vendor/pdfjs/standard_fonts/FoxitFixed.pfb',
+  'vendor/pdfjs/standard_fonts/FoxitFixedBold.pfb',
+  'vendor/pdfjs/standard_fonts/FoxitFixedBoldItalic.pfb',
+  'vendor/pdfjs/standard_fonts/FoxitFixedItalic.pfb',
+  'vendor/pdfjs/standard_fonts/FoxitSerif.pfb',
+  'vendor/pdfjs/standard_fonts/FoxitSerifBold.pfb',
+  'vendor/pdfjs/standard_fonts/FoxitSerifBoldItalic.pfb',
+  'vendor/pdfjs/standard_fonts/FoxitSerifItalic.pfb',
+  'vendor/pdfjs/standard_fonts/FoxitSymbol.pfb',
+  'vendor/pdfjs/standard_fonts/LiberationSans-Bold.ttf',
+  'vendor/pdfjs/standard_fonts/LiberationSans-BoldItalic.ttf',
+  'vendor/pdfjs/standard_fonts/LiberationSans-Italic.ttf',
+  'vendor/pdfjs/standard_fonts/LiberationSans-Regular.ttf',
   'js/recorder/capture-worklet.js',
   'js/recorder/recorder.js',
   'js/storage/recordings.js',

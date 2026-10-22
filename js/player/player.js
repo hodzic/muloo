@@ -284,6 +284,7 @@ function onPlayState() {
 }
 
 function onKey(e) {
+  if (!root?.offsetParent) return; // Recordings tab not visible
   if (e.target.closest?.('input, select, textarea, dialog[open]')) return;
   if (e.key === ' ' || e.key === 'k') { e.preventDefault(); togglePlay(); }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); seek(audio.currentTime - BACK_SEC); }

@@ -1,0 +1,29 @@
+{
+  "name": "MuLoo",
+  "short_name": "MuLoo",
+  "description": "Tuner, metronome, score viewer and practice recorder for guitar and ukulele.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0e0f12",
+  "theme_color": "#0e0f12",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "share_target": {
+    "action": "./share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "files": [{ "name": "score", "accept": ["application/pdf", ".pdf"] }]
+    }
+  },
+  "file_handlers": [
+    { "action": "./#scores", "accept": { "application/pdf": [".pdf"] } }
+  ]
+}

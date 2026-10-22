@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MuLoo test bench</title>
+  <link rel="stylesheet" href="../css/app.css">
+  <style>
+    body { padding: 16px; display: block; }
+    table { border-collapse: collapse; width: 100%; margin: 12px 0 24px; font-size: 14px; }
+    td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    .pass { color: var(--good); font-weight: 700; }
+    .fail { color: var(--bad); font-weight: 700; }
+    section { margin-bottom: 24px; }
+    pre { white-space: pre-wrap; font-size: 13px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <h1>MuLoo test bench</h1>
+  <p class="muted">Synthetic signals fed through the DSP modules (DESIGN.md §9). Headless: <code>node test/dsp.test.mjs</code>.</p>
+
+  <section>
+    <h2>DSP checks</h2>
+    <table id="dsp"><thead><tr><th>Result</th><th>Check</th><th>Detail</th></tr></thead><tbody></tbody></table>
+  </section>
+
+  <section>
+    <h2>Metronome drift</h2>
+    <p class="muted">Runs the real scheduler at 120 BPM and compares each scheduled click with the ideal grid. Also reports the smallest lead time (how far ahead of the audio clock a click was scheduled; negative means late).</p>
+    <div class="row">
+      <select id="drift-dur"><option value="10">10 s</option><option value="60">1 min</option><option value="300" selected>5 min</option></select>
+      <button class="btn primary" id="drift-run">Run</button>
+    </div>
+    <pre id="drift-out"></pre>
+  </section>
+
+  <section>
+    <h2>Test tone</h2>
+    <p class="muted">Plays an overtone-rich tone through the speaker, to check the tuner from a second device.</p>
+    <div class="row">
+      <select id="tone-note"><option>E2</option><option>A2</option><option>D3</option><option>G3</option><option>B3</option><option selected>E4</option><option>A4</option><option>C4</option></select>
+      <select id="tone-cents"><option value="-20">−20 ¢</option><option value="-5">−5 ¢</option><option value="0" selected>0 ¢</option><option value="5">+5 ¢</option><option value="20">+20 ¢</option></select>
+      <button class="btn" id="tone-play">Play 3 s</button>
+    </div>
+  </section>
+
+  <script type="module">
+    import { runDspChecks } from './checks.js';
+    import { Metronome } from '../js/metronome/scheduler.js';
+    import { getContext, resume } from '../js/audio/context.js';
+    import { parseNote, midiToFreq } from '../js/tuner/pitch.js';
+
+    const tbody = document.querySelector('#dsp tbody');
+    for (const r of runDspChecks()) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td class="${r.pass ? 'pass' : 'fail'}">${r.pass ? 'PASS' : 'FAIL'}</td><td></td><td></td>`;
+      tr.children[1].textContent = r.name;
+      tr.children[2].textContent = r.detail;
+      tbody.append(tr);
+    }
+
+    document.querySelector('#drift-run').onclick = async (e) => {
+      const btn = e.target;
+      const secs = +document.querySelector('#drift-dur').value;
+      const out = document.querySelector('#drift-out');
+      await resume();
+      const ctx = getContext();
+      const m = new Metronome();
+      m.set({ bpm: 120, timeSig: '4/4', subdivision: 'none', volume: 0.3 });
+      let n = 0, t0 = null, maxErr = 0, minLead = Infinity;
+      m.onSchedule((ev) => {
+        t0 ??= ev.time;
+        maxErr = Math.max(maxErr, Math.abs(ev.time - (t0 + n * 0.5)));
+        minLead = Math.min(minLead, ev.time - ctx.currentTime);
+        n++;
+      });
+      btn.disabled = true;
+      m.start();
+      const started = performance.now();
+      const tick = setInterval(() => {
+        const el = (performance.now() - started) / 1000;
+        out.textContent = `${el.toFixed(0)} / ${secs} s · ${n} clicks · max grid error ${(maxErr * 1e6).toFixed(3)} µs · min lead ${(minLead * 1000).toFixed(1)} ms`;
+        if (el >= secs) {
+          clearInterval(tick);
+          m.stop();
+          btn.disabled = false;
+          out.textContent += `\n${maxErr < 1e-6 && minLead > 0 ? 'PASS' : 'CHECK'}: grid error < 1 µs and no late clicks.`;
+        }
+      }, 500);
+    };
+
+    document.querySelector('#tone-play').onclick = async () => {
+      await resume();
+      const ctx = getContext();
+      const f = midiToFreq(parseNote(document.querySelector('#tone-note').value)) * 2 ** (+document.querySelector('#tone-cents').value / 1200);
+      const real = new Float32Array([0, 0.5, 1, 0.7, 0.4, 0.3, 0.2, 0.1]);
+      const osc = ctx.createOscillator();
+      osc.setPeriodicWave(ctx.createPeriodicWave(real, new Float32Array(real.length)));
+      osc.frequency.value = f;
+      const g = ctx.createGain();
+      const t = ctx.currentTime;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.3, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 3);
+      osc.connect(g).connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 3);
+    };
+  </script>
+</body>
+</html>

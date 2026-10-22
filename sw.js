@@ -1,0 +1,86 @@
+// Service worker: cache-first, versioned (DESIGN.md §8).
+// Bump CACHE whenever a shell file changes so clients get the update toast.
+
+const CACHE = 'gp-v1';
+const INBOX = 'muloo-inbox';
+
+const SHELL = [
+  './',
+  'index.html',
+  'manifest.webmanifest',
+  'css/app.css',
+  'icons/icon.svg',
+  'icons/icon-192.png',
+  'icons/icon-512.png',
+  'icons/icon-maskable-512.png',
+  'js/main.js',
+  'js/settings-ui.js',
+  'js/audio/context.js',
+  'js/audio/input.js',
+  'js/metronome/scheduler.js',
+  'js/metronome/metronome-ui.js',
+  'js/practice/practice-ui.js',
+  'js/storage/db.js',
+  'js/tuner/pitch.js',
+  'js/tuner/presets.js',
+  'js/tuner/tuner-ui.js',
+  'js/util/dom.js',
+  'js/util/wakelock.js',
+  'js/util/wav.js',
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    for (const key of await caches.keys()) {
+      if (key !== CACHE && key !== INBOX) await caches.delete(key);
+    }
+    await self.clients.claim();
+  })());
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  const url = new URL(req.url);
+  if (url.origin !== location.origin) return;
+
+  // Android share sheet → MuLoo (W4). Files wait in the inbox until the
+  // Scores tab imports them.
+  if (req.method === 'POST' && url.pathname.endsWith('/share-target')) {
+    event.respondWith((async () => {
+      const form = await req.formData();
+      const inbox = await caches.open(INBOX);
+      for (const file of form.getAll('score')) {
+        if (!(file instanceof File)) continue;
+        const key = `inbox/${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        await inbox.put(key, new Response(file, {
+          headers: { 'Content-Type': file.type || 'application/pdf', 'X-File-Name': encodeURIComponent(file.name) },
+        }));
+      }
+      return Response.redirect('./?shared=1#scores', 303);
+    })());
+    return;
+  }
+
+  if (req.method !== 'GET') return;
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    const hit = await cache.match(req, { ignoreSearch: req.mode === 'navigate' });
+    if (hit) return hit;
+    try {
+      const res = await fetch(req);
+      if (res.ok && res.type === 'basic') cache.put(req, res.clone());
+      return res;
+    } catch (e) {
+      if (req.mode === 'navigate') return (await cache.match('index.html')) ?? Response.error();
+      throw e;
+    }
+  })());
+});

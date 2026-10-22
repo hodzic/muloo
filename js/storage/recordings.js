@@ -1,6 +1,6 @@
 // Recordings and their PCM chunks (DESIGN.md §6).
 
-import { get, getAll, put, del } from './db.js';
+import { get, getAll, put, del, transaction } from './db.js';
 import { encodeWav } from '../util/wav.js';
 
 const chunkRange = (id) => IDBKeyRange.bound([id, 0], [id, Infinity]);
@@ -32,6 +32,24 @@ export async function loadPcm(id) {
   let off = 0;
   for (const c of chunks) { out.set(c, off); off += c.length; }
   return out;
+}
+
+/**
+ * Replace a recording's audio (after an edit) and save `rec` with the new
+ * length, all in one transaction. Resolves to the saved recording.
+ */
+export async function replacePcm(rec, pcm) {
+  const updated = { ...rec, lengthSamples: pcm.length };
+  const size = rec.sampleRate; // ~1 s per chunk, as when recording
+  await transaction(['recordings', 'pcmChunks'], 'readwrite', (tx) => {
+    const chunks = tx.objectStore('pcmChunks');
+    chunks.delete(chunkRange(rec.id));
+    for (let off = 0, index = 0; off < pcm.length; off += size, index++) {
+      chunks.put({ recordingId: rec.id, index, data: pcm.slice(off, off + size) });
+    }
+    tx.objectStore('recordings').put(updated);
+  });
+  return updated;
 }
 
 export async function wavBlob(rec) {

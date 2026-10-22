@@ -2,6 +2,7 @@
 import { yin, cents, noteInfo, parseNote, midiToFreq } from '../js/tuner/pitch.js';
 import { encodeWav, decodeWav, floatToInt16 } from '../js/util/wav.js';
 import { computePeaks } from '../js/editor/waveform.js';
+import { crop, applyGain, normalize, peak, peakDb } from '../js/editor/edit-ops.js';
 
 const SR = 48000;
 const N = 4096;
@@ -78,6 +79,28 @@ export function runDspChecks() {
     pass: pk.min[0] === -16000 / 32768 && pk.max[9] === (999 * 32 - 16000) / 32768 && pk.max[0] === (99 * 32 - 16000) / 32768
       && pk2.max.length === 8 && pk2.max[2] === 1 && pk2.min[4] === -1,
     detail: `10 columns over 1000 samples; 8 columns over 4 samples`,
+  });
+
+  // Edit operations.
+  const src = floatToInt16(tone(440, { n: 48000, amp: 0.25 }));
+  const cut = crop(src, 12000, 36000, SR, 10);
+  const fadeN = 480;
+  const midPeak = peak(cut.subarray(fadeN, cut.length - fadeN));
+  results.push({
+    name: 'Crop keeps the selection with 10 ms fades',
+    pass: cut.length === 24000 && cut[0] === 0 && Math.abs(cut[cut.length - 1]) <= 1
+      && Math.abs(cut[100]) <= Math.abs(src[12100]) && cut[fadeN + 7] === src[12000 + fadeN + 7] && midPeak > 8000
+      && crop(src, 0, src.length, SR).every((v, i) => v === src[i]),
+    detail: `length ${cut.length}, first ${cut[0]}, last ${cut[cut.length - 1]}`,
+  });
+  const norm = normalize(src);
+  const plus6 = applyGain(src, 6.0206);
+  const loud = applyGain(src, 20);
+  results.push({
+    name: 'Normalize to −1 dBFS; gain; clipping at full scale',
+    pass: Math.abs(peakDb(norm) - -1) < 0.01 && Math.abs(peak(plus6) / peak(src) - 2) < 0.001
+      && peak(loud) === 32768 && src[5] === floatToInt16(tone(440, { n: 48000, amp: 0.25 }))[5],
+    detail: `normalized peak ${peakDb(norm).toFixed(3)} dBFS, +6 dB ratio ${(peak(plus6) / peak(src)).toFixed(4)}`,
   });
 
   return results;

@@ -30,7 +30,7 @@ export function computePeaks(pcm, columns, start = 0, end = pcm.length) {
  * Draw peaks plus an optional loop region and playhead.
  * Times are fractions of the visible span (0..1); null hides an element.
  */
-export function drawWaveform(canvas, peaks, { a = null, b = null, loopOn = false, playhead = null, colors }) {
+export function drawWaveform(canvas, peaks, { a = null, b = null, loopOn = false, playhead = null, colors, labels = ['A', 'B'] }) {
   const g = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height, mid = H / 2;
   const dpr = W / canvas.clientWidth || 1;
@@ -64,7 +64,7 @@ export function drawWaveform(canvas, peaks, { a = null, b = null, loopOn = false
       g.fillText(label, Math.min(W - w / 2, Math.max(w / 2, x * W)), h / 2);
     }
   };
-  if (a != null) marker(a, colors.handle, 'A');
-  if (b != null) marker(b, colors.handle, 'B');
+  if (a != null) marker(a, colors.handle, labels[0]);
+  if (b != null) marker(b, colors.handle, labels[1]);
   if (playhead != null) marker(playhead, colors.playhead);
 }

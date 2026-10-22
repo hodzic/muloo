@@ -1,9 +1,11 @@
-// Recordings tab: newest take first; tap a take to open it in the Player.
-// Library actions (rename, export, share) arrive in a later milestone.
+// Recordings tab: newest take first; tap a take to open it in the Player,
+// which leads on to the Editor. Share and delete from the list too.
 
-import { listRecordings, deleteRecording, durationSec, sizeBytes } from '../storage/recordings.js';
+import { listRecordings, deleteRecording, getRecording, durationSec, sizeBytes } from '../storage/recordings.js';
 import { onRecorderChange } from '../recorder/recorder.js';
-import { openPlayer, closePlayer, pausePlayer, isOpen } from '../player/player.js';
+import { openPlayer, closePlayer, pausePlayer } from '../player/player.js';
+import { openEditor, closeEditor, pauseEditor } from '../editor/editor.js';
+import { openShareDialog } from './dialogs.js';
 import { $, escapeHtml, formatBytes } from '../util/dom.js';
 
 let root;
@@ -17,34 +19,42 @@ export function mount(el) {
   root = el;
   el.innerHTML = `<ul class="rec-list" aria-label="Recordings"></ul><div class="player-host" hidden></div>`;
   $('.rec-list', el).addEventListener('click', onListClick);
-  onRecorderChange(() => { if (active && !isOpen()) render(); });
+  onRecorderChange(() => { if (active && $('.player-host', root).hidden) render(); });
 }
 
 export function enter({ recordingId, open = false } = {}) {
   active = true;
   if (recordingId) highlightId = recordingId;
   if (recordingId && open) showPlayer(recordingId);
-  else if (!isOpen()) render();
+  else if ($('.player-host', root).hidden) render();
 }
 
 export function leave() {
   active = false;
   pausePlayer();
+  pauseEditor();
 }
 
 function showList() {
   closePlayer();
+  closeEditor();
   $('.player-host', root).hidden = true;
   $('.rec-list', root).hidden = false;
   render();
 }
 
 function showPlayer(id) {
+  closeEditor();
   highlightId = id;
   $('.rec-list', root).hidden = true;
   const host = $('.player-host', root);
   host.hidden = false;
-  openPlayer(host, id, { onClose: showList });
+  openPlayer(host, id, { onClose: showList, onEdit: showEditor });
+}
+
+function showEditor(id) {
+  const host = $('.player-host', root);
+  openEditor(host, id, { onClose: () => showPlayer(id) });
 }
 
 async function render() {
@@ -73,6 +83,9 @@ async function render() {
           <div class="rec-name">${escapeHtml(r.name)}${r.recovered ? ' <span class="tag">recovered</span>' : ''} ${loop}</div>
           <div class="rec-meta">${escapeHtml(meta)}</div>
         </button>
+        <button class="btn icon share" aria-label="Share" ${inProgress ? 'disabled' : ''}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 13v7h14v-7"/></svg>
+        </button>
         <button class="btn icon delete" aria-label="Delete" ${inProgress ? 'disabled' : ''}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>
         </button>
@@ -90,6 +103,9 @@ async function onListClick(e) {
     if (!confirm(`Delete “${name}”?`)) return;
     await deleteRecording(id);
     render();
+  } else if (e.target.closest('.share')) {
+    const rec = await getRecording(id);
+    if (rec) openShareDialog(rec);
   } else if (e.target.closest('.rec-open')) {
     showPlayer(id);
   }

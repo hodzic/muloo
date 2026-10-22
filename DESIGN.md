@@ -417,8 +417,8 @@ On first launch, call `navigator.storage.persist()`.
 2. **Metronome:** the full feature set, including the mini metronome bar.
 3. **Tuner, standard mode:** includes the test bench.
 4. **Recorder:** worklet capture, chunked storage, level meter, and count-in.
-5. **Scores:** import, viewer, page turns, and pedal keys.
-6. **Player:** A/B loop and speed control.
+5. **Player:** A/B loop and speed control.
+6. **Scores:** import, viewer, page turns, and pedal keys.
 7. **Editor and library:**
    - Crop, gain, normalize, undo, and WAV export.
    - Compressed sharing (`.m4a`).

@@ -10,8 +10,8 @@ A practice-session PWA for guitar and ukulele: tuner, metronome, PDF score viewe
 | 2. Metronome, incl. mini bar | done |
 | 3. Tuner (standard mode) + test bench | done |
 | 4. Recorder | — |
-| 5. Scores | — |
-| 6. Player | — |
+| 5. Player | — |
+| 6. Scores | — |
 | 7. Editor and library | — |
 | 8. Tuner beat mode | — |
 | 9. Score map and auto-scroll | — |

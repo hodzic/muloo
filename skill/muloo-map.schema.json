@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hodzic.github.io/muloo/skill/muloo-map.schema.json",
+  "title": "MuLoo score map",
+  "description": "Rows of music (systems), measures and playing order of a score PDF. Coordinates are PDF points measured from each page's top-left corner (y grows downward). Embedded in the PDF as the attachment muloo.json.",
+  "type": "object",
+  "required": ["muloo", "pages"],
+  "properties": {
+    "muloo": { "const": 1, "description": "Map format version." },
+    "title": { "type": "string" },
+    "timeSig": { "enum": ["2/4", "3/4", "4/4", "5/4", "6/8", "7/8", "12/8"], "default": "4/4", "description": "Time signature at the start. In x/8 meters each eighth is a metronome click." },
+    "tempo": { "type": "integer", "minimum": 30, "maximum": 250, "default": 90, "description": "Starting tempo in clicks per minute." },
+    "order": { "type": "string", "pattern": "^\\s*\\d+(\\s*-\\s*\\d+)?(\\s*,\\s*\\d+(\\s*-\\s*\\d+)?)*\\s*$", "description": "Playing order as comma-separated measure ranges, e.g. \"1-16, 1-15, 17-32, 9-16\". Omit to play straight through." },
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["page", "systems"],
+        "properties": {
+          "page": { "type": "integer", "minimum": 1, "description": "1-based page number." },
+          "systems": {
+            "type": "array",
+            "description": "Rows of music, top to bottom. A system may hold several staves (e.g. notation plus tab).",
+            "items": {
+              "type": "object",
+              "required": ["y0", "y1", "measures"],
+              "properties": {
+                "y0": { "type": "number", "description": "Top of the row, including room for notes above the staff." },
+                "y1": { "type": "number", "description": "Bottom of the row." },
+                "measures": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["n", "x0", "x1"],
+                    "properties": {
+                      "n": { "type": "integer", "minimum": 1, "description": "Measure number, counted 1..N through the whole score in reading order." },
+                      "x0": { "type": "number", "description": "Left barline (or start of the staff)." },
+                      "x1": { "type": "number", "description": "Right barline." },
+                      "timeSig": { "enum": ["2/4", "3/4", "4/4", "5/4", "6/8", "7/8", "12/8"], "description": "New time signature from this measure on." },
+                      "tempo": { "type": "integer", "minimum": 30, "maximum": 250, "description": "New tempo from this measure on." },
+                      "marks": {
+                        "type": "object",
+                        "description": "Navigation marks, used by the MuLoo map editor to work out `order`.",
+                        "properties": {
+                          "repeatStart": { "type": "boolean" }, "repeatEnd": { "type": "boolean" },
+                          "ending1": { "type": "boolean" }, "ending2": { "type": "boolean" },
+                          "segno": { "type": "boolean" }, "ds": { "type": "boolean" }, "dc": { "type": "boolean" },
+                          "toCoda": { "type": "boolean" }, "coda": { "type": "boolean" }, "fine": { "type": "boolean" }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

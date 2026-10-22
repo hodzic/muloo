@@ -1,9 +1,10 @@
 // Practice tab (DESIGN.md §1a): metronome bar, optional score, recording.
-// With no score loaded the stage shows a large level meter and timer.
-// Score display and auto-scroll arrive in a later milestone.
+// With no score loaded the stage shows a large level meter and timer; with
+// one it shows the auto-scrolling score (practice-score.js).
 
 import { metronome } from '../metronome/scheduler.js';
-import { createMetronomeBar } from '../metronome/metronome-ui.js';
+import { createMetronomeBar, createMiniMetronome } from '../metronome/metronome-ui.js';
+import { mountScorePanel, enterScorePanel, leaveScorePanel, hasScore, startFollow, scoreLink, useScore } from './practice-score.js';
 import { acquireInput, releaseInput, getInput, readLevel, setInputGainDb, looksBluetooth, onInputChange, GAIN_MAX_DB } from '../audio/input.js';
 import { canStartAudio } from '../audio/context.js';
 import { startRecording, stopRecording, isRecording, elapsedSec, onRecorderChange, MAX_SECONDS } from '../recorder/recorder.js';
@@ -30,6 +31,8 @@ export function mount(el) {
   root = el;
   el.innerHTML = `
     <div class="practice">
+      <div class="score-toolbar"></div>
+      <div class="score-stage" hidden></div>
       <div class="stage">
         <div class="rec-badge" hidden>● REC</div>
         <div class="count-in-overlay" hidden></div>
@@ -40,7 +43,7 @@ export function mount(el) {
           <div class="meter-clip">CLIP</div>
         </div>
         <div class="mic-message" hidden></div>
-        <p class="hint">No score loaded. Score view and auto-scroll come in a later milestone.</p>
+        <p class="hint">Pick a score above to have it scroll along with the metronome.</p>
       </div>
       <div class="input-row">
         <button class="btn mic-btn" aria-label="Input device"><span class="mic-label">Mic</span></button>
@@ -50,6 +53,7 @@ export function mount(el) {
       </div>
       <p class="warn bt-warning" hidden>Bluetooth mic: Android switches to low-quality call audio. Use the phone or a USB mic.</p>
       <div class="metro-slot"></div>
+      <div class="metro-mini-slot" hidden></div>
       <div class="record-row">
         <select class="count-in-select" aria-label="Count-in">
           <option value="0">No count-in</option>
@@ -60,6 +64,8 @@ export function mount(el) {
       </div>
     </div>`;
   createMetronomeBar($('.metro-slot', el), { flashTarget: $('.stage', el) });
+  createMiniMetronome($('.metro-mini-slot', el));
+  mountScorePanel($('.score-toolbar', el), $('.score-stage', el), { onChange: renderScoreMode });
 
   $('.count-in-select', el).value = settings.get('recorder.countIn', 1);
   $('.count-in-select', el).addEventListener('change', (e) => settings.set('recorder.countIn', +e.target.value));
@@ -88,8 +94,18 @@ export function mount(el) {
   renderRecording();
 }
 
-export function enter() {
+function renderScoreMode() {
+  const score = hasScore();
+  $('.score-stage', root).hidden = !score;
+  $('.stage', root).classList.toggle('compact', score);
+  $('.metro-slot', root).hidden = score;
+  $('.metro-mini-slot', root).hidden = !score;
+}
+
+export function enter({ scoreId } = {}) {
   active = true;
+  if (scoreId) useScore(scoreId);
+  else enterScorePanel();
   renderGain();
   if (canStartAudio()) openMic();
   else showMicMessage('Tap to turn on the microphone for the level meter.', 'Turn on mic');
@@ -99,6 +115,7 @@ export function enter() {
 
 export function leave() {
   active = false;
+  leaveScorePanel();
   cancelAnimationFrame(raf);
   releaseInput('practice');
 }
@@ -150,7 +167,12 @@ async function toggleRecording() {
       if (rec) navigate('recordings', { recordingId: rec.id, open: true });
     } else {
       $('.mic-message', root).hidden = true;
-      await startRecording({ countInBars: +$('.count-in-select', root).value });
+      const countInBars = +$('.count-in-select', root).value;
+      if (hasScore()) {
+        await startRecording({ countInBars, startMetronome: (bars) => startFollow(bars), score: scoreLink() });
+      } else {
+        await startRecording({ countInBars });
+      }
     }
   } catch (e) {
     if (e.name?.endsWith('Error') && /NotAllowed|NotFound|Security|NotReadable|Overconstrained/.test(e.name)) {

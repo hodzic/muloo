@@ -4,6 +4,26 @@ import { encodeWav, decodeWav, floatToInt16 } from '../js/util/wav.js';
 import { computePeaks } from '../js/editor/waveform.js';
 import { crop, applyGain, normalize, peak, peakDb } from '../js/editor/edit-ops.js';
 import { analyzeBeats, stringPairs, beatTarget } from '../js/tuner/beats.js';
+import { flatten, parseOrder, formatOrder, playOrder, orderFromMarkers, barPlan, validateMap } from '../js/scores/score-map.js';
+import { detectPage } from '../js/scores/detect.js';
+
+/** Synthetic engraved page: staves, joined systems, barlines, a stem. */
+function syntheticPage() {
+  const w = 1000, h = 700, g = new Uint8Array(w * h).fill(255);
+  const hline = (y, x0, x1) => { for (let x = x0; x <= x1; x++) { g[y * w + x] = 0; g[(y + 1) * w + x] = 0; } };
+  const vline = (x, y0, y1) => { for (let y = y0; y <= y1; y++) { g[y * w + x] = 0; g[y * w + x + 1] = 0; } };
+  const staff = (top, n, sp, x0, x1) => { for (let k = 0; k < n; k++) hline(top + k * sp, x0, x1); return [top, top + (n - 1) * sp + 1]; };
+  // System 1: notation (5 lines, spacing 10) + tab (6 lines, spacing 12), bracket at the left.
+  const [a0, a1] = staff(100, 5, 10, 80, 920);
+  const [b0, b1] = staff(190, 6, 12, 80, 920);
+  vline(80, a0, b1);
+  for (const x of [290, 500, 710, 919]) { vline(x, a0, a1); vline(x, b0, b1); }
+  vline(400, a0 - 5, a1); // a note stem: notation staff only
+  // System 2: one staff, 3 measures, final double barline.
+  const [c0, c1] = staff(450, 5, 10, 80, 920);
+  for (const x of [360, 640, 914, 919]) vline(x, c0, c1);
+  return { g, w, h };
+}
 
 /** Plucked-string-ish tones: each { freq, harmonics?, amp? }, decaying, summed. */
 export function plucked(tones, { sr = SR, seconds = 4, decay = 2.5 } = {}) {
@@ -162,6 +182,60 @@ export function runDspChecks() {
     pass: uke[0].lo.note === 'C4' && uke[0].hi.note === 'G4' && uke[0].semis === 7 && uke[0].modes.unison
       && Math.abs(gb.target - 7.78) < 0.05 && Math.abs(ea.target - 0.37) < 0.02 && beatTarget(eaPair, 'unison').target === 0,
     detail: `G4–C4 pairs as C4→G4 (${uke[0].semis} semitones); G3–B3 target ${gb.target.toFixed(2)} Hz; E2–A2 ${ea.target.toFixed(2)} Hz`,
+  });
+
+  // Score map: playback order.
+  const ord = parseOrder('1-4, 1-3, 5, 7-8');
+  results.push({
+    name: 'Score map: parse and format playback order',
+    pass: ord.join() === '1,2,3,4,1,2,3,5,7,8' && formatOrder(ord) === '1-4, 1-3, 5, 7-8'
+      && (() => { try { parseOrder('3-1'); return false; } catch { return true; } })(),
+    detail: formatOrder(ord),
+  });
+  const nums = [1, 2, 3, 4, 5, 6, 7, 8];
+  const voltas = orderFromMarkers(nums, { 1: { repeatStart: true }, 3: { ending: 1, repeatEnd: true }, 4: { ending: 2 } });
+  const dsCoda = orderFromMarkers(nums, { 3: { segno: true }, 5: { toCoda: true }, 6: { ds: true }, 7: { coda: true } });
+  const simple = orderFromMarkers([1, 2, 3], { 2: { repeatEnd: true } });
+  const dcFine = orderFromMarkers([1, 2, 3, 4], { 2: { fine: true }, 4: { dc: true } });
+  results.push({
+    name: 'Score map: order from repeats, endings, D.S. al Coda, D.C. al Fine',
+    pass: voltas.join() === '1,2,3,1,2,4,5,6,7,8' && dsCoda.join() === '1,2,3,4,5,6,3,4,5,7,8'
+      && simple.join() === '1,2,1,2,3' && dcFine.join() === '1,2,3,4,1,2',
+    detail: `voltas ${formatOrder(voltas)} · D.S. ${formatOrder(dsCoda)} · D.C. ${formatOrder(dcFine)}`,
+  });
+  const map = {
+    muloo: 1, title: 'T', timeSig: '3/4', tempo: 90, order: '1-3, 1-2, 4',
+    pages: [{ page: 1, systems: [
+      { y0: 72, y1: 168, measures: [{ n: 1, x0: 60, x1: 190 }, { n: 2, x0: 190, x1: 300, timeSig: '4/4' }] },
+      { y0: 200, y1: 290, measures: [{ n: 3, x0: 60, x1: 200, tempo: 120 }, { n: 4, x0: 200, x1: 300 }] },
+    ] }],
+  };
+  const flat = flatten(map);
+  const po = playOrder(map, flat);
+  const plan = [];
+  for (const bar of barPlan(flat, po.indices, { startPos: 0, loopFrom: 0, loopTo: 1, rampStep: 10, rampTarget: 105 })) {
+    plan.push(bar);
+    if (plan.length === 6) break;
+  }
+  results.push({
+    name: 'Score map: overrides, play order, loop with tempo ramp',
+    pass: flat.measures[0].beats === 3 && flat.measures[1].beats === 4 && flat.measures[3].beats === 4 && flat.measures[2].bpm === 120
+      && flat.measures[0].id === 'p01s01m01' && flat.systems[1].first === 2
+      && po.indices.join() === '0,1,2,0,1,3' && validateMap(map).length === 0
+      && plan.map((b) => b.bpm).join() === '90,90,100,100,105,105',
+    detail: `beats ${flat.measures.map((m) => m.beats).join('/')}, play ${po.indices.join(',')}, ramp ${plan.map((b) => b.bpm).join(',')}`,
+  });
+
+  // Layout detection on a synthetic page.
+  const { g, w, h } = syntheticPage();
+  const det = detectPage(g, w, h, 2);
+  const m1 = det[0]?.measures.map((m) => [m.x0 * 2, m.x1 * 2].map(Math.round).join('-')).join(' ');
+  const m2 = det[1]?.measures.map((m) => [m.x0 * 2, m.x1 * 2].map(Math.round).join('-')).join(' ');
+  results.push({
+    name: 'Layout detection: notation+tab system, single-staff system, barlines',
+    pass: det.length === 2 && det[0].measures.length === 4 && det[1].measures.length === 3
+      && det[0].y0 * 2 < 100 && det[0].y1 * 2 > 251 && det[1].y0 * 2 < 450 && det[1].y1 * 2 > 491,
+    detail: `${det.length} systems; [${m1}] [${m2}]`,
   });
 
   return results;

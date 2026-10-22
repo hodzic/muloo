@@ -56,6 +56,14 @@ export class Metronome {
   volume = 0.8;
   clickMode = 'audible';
   running = false;
+  /**
+   * Called with the bar number as each bar (after any count-in) is about to
+   * be scheduled. May return { timeSig, bpm } for that bar, or { stop: true }
+   * to stop before it. Used by score auto-scroll.
+   */
+  barHook = null;
+  /** If set, start()/toggle() call this instead of starting plain clicks. */
+  startOverride = null;
 
   #ticker = createTicker(() => this.#schedule());
   #listeners = { beat: new Set(), schedule: new Set(), change: new Set() };
@@ -67,6 +75,7 @@ export class Metronome {
   #beat = 0;
   #sub = 0;
   #stopAt = null;
+  #hookedBar = null;
 
   /** Visual beat: called on the animation frame when a scheduled click is heard. */
   onBeat(fn) { return this.#on('beat', fn); }
@@ -138,7 +147,9 @@ export class Metronome {
   }
 
   toggle() {
-    if (this.running) this.stop(); else this.start();
+    if (this.running) this.stop();
+    else if (this.startOverride) this.startOverride();
+    else this.start();
   }
 
   #begin(atTime, countInBars, keepClicking) {
@@ -150,6 +161,7 @@ export class Metronome {
     this.#beat = 0;
     this.#sub = 0;
     this.#stopAt = keepClicking ? null : this.#next + countInBars * this.barDuration;
+    this.#hookedBar = null;
     this.#out = ctx.createGain();
     this.#out.gain.value = this.volume;
     this.#out.connect(ctx.destination);
@@ -167,6 +179,16 @@ export class Metronome {
     const until = ctx.currentTime + LOOKAHEAD;
     while (this.#next < until) {
       if (this.#stopAt != null && this.#next >= this.#stopAt - 1e-6) break;
+      if (this.barHook && this.#beat === 0 && this.#sub === 0 && this.#bar >= 0 && this.#hookedBar !== this.#bar) {
+        this.#hookedBar = this.#bar;
+        const patch = this.barHook(this.#bar);
+        if (patch?.stop) { this.#stopAt = this.#next; break; }
+        if (patch && (patch.timeSig !== this.timeSig || patch.bpm !== this.bpm)) {
+          if (TIME_SIGS[patch.timeSig]) this.timeSig = patch.timeSig;
+          if (patch.bpm) this.bpm = clampBpm(patch.bpm);
+          this.#emit('change', this);
+        }
+      }
       const sig = TIME_SIGS[this.timeSig];
       const countIn = this.#bar < 0;
       const subs = countIn ? 1 : SUBDIVISIONS[this.subdivision];

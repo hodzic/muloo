@@ -313,3 +313,31 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .tag { font-size: 11px; font-weight: 600; color: var(--warn); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; vertical-align: middle; }
 .rec .delete { flex: none; width: var(--tap); }
 .rec-list .placeholder { list-style: none; margin-top: 30vh; }
+
+/* Recordings list rows open the player */
+.rec-open { flex: 1; min-width: 0; min-height: var(--tap); appearance: none; border: 0; background: none; color: inherit; font: inherit; text-align: left; padding: 4px 0; }
+.loop-tag { color: var(--accent); }
+
+/* Player */
+.player-host { flex: 1; display: flex; flex-direction: column; }
+.player { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+.player-head { display: flex; align-items: center; gap: 4px; margin-left: -12px; }
+.player-title { min-width: 0; }
+.wave-wrap { flex: 1; min-height: 140px; max-height: 320px; background: var(--surface); border-radius: var(--radius); overflow: hidden; }
+.wave { display: block; width: 100%; height: 100%; touch-action: none; }
+.out-level { height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+.out-fill { height: 100%; width: 0; background: var(--muted); }
+.times { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.times .pos { color: var(--text); font-weight: 600; }
+.times .loop-times { color: var(--accent); }
+.loop-row { display: flex; gap: 8px; }
+.loop-row .btn:not(.icon) { flex: 1; padding: 0 8px; }
+.loop-row .clear-loop { width: var(--tap); flex: none; }
+.speed-row { display: flex; align-items: center; justify-content: center; gap: 16px; }
+.speed-value { min-width: 64px; text-align: center; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.transport { display: flex; align-items: center; justify-content: center; gap: 28px; padding-bottom: 4px; }
+.transport .btn.round { width: 60px; height: 60px; font-size: 16px; }
+.transport .play { width: 80px !important; height: 80px !important; }
+.transport svg, .player-head svg, .loop-row svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.transport .play svg { width: 34px; height: 34px; fill: currentColor; stroke-width: 2.5; }
+.transport .to-a svg { fill: currentColor; }

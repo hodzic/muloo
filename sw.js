@@ -1,7 +1,7 @@
 // Service worker: cache-first, versioned (DESIGN.md §8).
 // Bump CACHE whenever a shell file changes so clients get the update toast.
 
-const CACHE = 'gp-v2';
+const CACHE = 'gp-v3';
 const INBOX = 'muloo-inbox';
 
 const SHELL = [
@@ -21,6 +21,8 @@ const SHELL = [
   'js/metronome/metronome-ui.js',
   'js/practice/practice-ui.js',
   'js/library/library-ui.js',
+  'js/player/player.js',
+  'js/editor/waveform.js',
   'js/recorder/capture-worklet.js',
   'js/recorder/recorder.js',
   'js/storage/recordings.js',

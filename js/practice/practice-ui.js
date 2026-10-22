@@ -147,7 +147,7 @@ async function toggleRecording() {
     if (isRecording()) {
       const { rec, error } = await stopRecording();
       reportError(error);
-      if (rec) navigate('recordings', { recordingId: rec.id });
+      if (rec) navigate('recordings', { recordingId: rec.id, open: true });
     } else {
       $('.mic-message', root).hidden = true;
       await startRecording({ countInBars: +$('.count-in-select', root).value });

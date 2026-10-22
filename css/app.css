@@ -341,3 +341,38 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .transport svg, .player-head svg, .loop-row svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .transport .play svg { width: 34px; height: 34px; fill: currentColor; stroke-width: 2.5; }
 .transport .to-a svg { fill: currentColor; }
+
+/* Scores */
+.scores-lib { display: flex; flex-direction: column; gap: 12px; flex: 1; }
+.add-score { display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.score-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.score { display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 12px; background: var(--surface); border-radius: var(--radius); }
+.score-open { flex: 1; min-width: 0; min-height: var(--tap); appearance: none; border: 0; background: none; color: inherit; font: inherit; text-align: left; padding: 4px 0; }
+.score .btn.icon { width: var(--tap); flex: none; }
+.score .btn.icon svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.score-list .placeholder { margin-top: 20vh; }
+
+.score-viewer { flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.viewer-head { display: flex; align-items: center; gap: 4px; margin-left: -12px; }
+.viewer-head svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.v-title { flex: 1; min-width: 0; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v-page { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 14px; }
+.page-stage {
+  flex: 1;
+  min-height: 0;
+  height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: #fff;
+  border-radius: 4px;
+  touch-action: pan-y;
+  outline: none;
+  user-select: none;
+}
+.page-stage canvas { display: block; }
+
+/* Full-screen score: hide all chrome */
+body.immersive .topbar, body.immersive .tabbar, body.immersive .viewer-head, body.immersive .score-viewer .mini-slot { display: none; }
+body.immersive main { padding: 0; }
+body.immersive .score-viewer { gap: 0; }
+body.immersive .page-stage { border-radius: 0; }

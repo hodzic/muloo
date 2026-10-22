@@ -3,30 +3,20 @@
 import { settings, requestPersistence } from './storage/db.js';
 import { installGestureResume } from './audio/context.js';
 import { initSettings } from './settings-ui.js';
-import { createMiniMetronome } from './metronome/metronome-ui.js';
 import * as tuner from './tuner/tuner-ui.js';
 import * as practice from './practice/practice-ui.js';
 import * as library from './library/library-ui.js';
+import * as scores from './scores/scores-ui.js';
 import { recoverInterrupted } from './storage/recordings.js';
 import * as pitch from './tuner/pitch.js';
 import * as wav from './util/wav.js';
 import { metronome } from './metronome/scheduler.js';
 import { $, $$, toast } from './util/dom.js';
 
-const placeholder = (title, text, { mini = false } = {}) => ({
-  mount(el) {
-    el.innerHTML = `${mini ? '<div class="mini-slot"></div>' : ''}
-      <div class="placeholder"><h2>${title}</h2><p>${text}</p></div>`;
-    if (mini) createMiniMetronome($('.mini-slot', el));
-  },
-  enter() {},
-  leave() {},
-});
-
 const VIEWS = {
   tune: { title: 'Tune', module: tuner },
   practice: { title: 'Practice', module: practice },
-  scores: { title: 'Scores', module: placeholder('Scores', 'PDF import, the viewer and page turns arrive in milestone 6.', { mini: true }) },
+  scores: { title: 'Scores', module: scores },
   recordings: { title: 'Recordings', module: library },
 };
 
@@ -91,6 +81,12 @@ async function init() {
   } catch (e) {
     console.warn('Recording recovery failed', e);
   }
+
+  // PDFs opened with MuLoo from the Files app (manifest file_handlers).
+  window.launchQueue?.setConsumer(async ({ files }) => {
+    if (!files?.length) return;
+    show('scores', { files: await Promise.all(files.map((h) => h.getFile())) });
+  });
 
   const fromHash = location.hash.slice(1);
   show(VIEWS[fromHash] ? fromHash : settings.get('lastTab', 'tune'));

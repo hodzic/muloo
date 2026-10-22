@@ -9,6 +9,8 @@ import { loadPcm, getRecording, saveRecording, durationSec } from '../storage/re
 import { encodeWav } from '../util/wav.js';
 import { computePeaks, drawWaveform } from '../editor/waveform.js';
 import { holdWakeLock, releaseWakeLock } from '../util/wakelock.js';
+import { openShareDialog, openDetailsDialog } from '../library/dialogs.js';
+import { getScore } from '../scores/scores.js';
 import { $, escapeHtml, onPressRepeat, toast } from '../util/dom.js';
 
 export const SPEED_MIN = 0.5;
@@ -37,6 +39,7 @@ let saveTimer = null;
 let levelBuf = null;
 let drag = null;
 let onCloseCb = null;
+let onEditCb = null;
 let colors = null;
 
 const COLORS = () => {
@@ -80,10 +83,11 @@ function ensureAudioGraph() {
 export const isOpen = () => rec != null;
 
 /** Open recording `id` in `host`. `onClose` runs when the user taps back. */
-export async function openPlayer(host, id, { onClose } = {}) {
+export async function openPlayer(host, id, { onClose, onEdit } = {}) {
   closePlayer();
   ensureAudioGraph();
   onCloseCb = onClose;
+  onEditCb = onEdit;
   root = host;
   root.innerHTML = markup();
   bind();
@@ -103,11 +107,7 @@ export async function openPlayer(host, id, { onClose } = {}) {
   loop = { a: rec.loopA ?? null, b: rec.loopB ?? null, on: !!rec.loopOn && rec.loopA != null && rec.loopB != null };
   if (loop.on) audio.currentTime = loop.a;
 
-  $('.p-name', root).textContent = rec.name;
-  $('.p-meta', root).textContent = [
-    new Date(rec.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }),
-    rec.tempo ? `${rec.tempo} BPM ${rec.timeSig}` : '',
-  ].filter(Boolean).join(' · ');
+  renderTitle();
   $('.dur', root).textContent = fmt(duration);
   resizeCanvas();
   renderControls();
@@ -139,6 +139,26 @@ export function pausePlayer() {
   audio?.pause();
 }
 
+async function renderTitle() {
+  const r = rec;
+  $('.p-name', root).textContent = r.name;
+  const score = r.scoreId ? await getScore(r.scoreId).catch(() => null) : null;
+  if (!root || rec?.id !== r.id) return;
+  $('.p-meta', root).textContent = [
+    new Date(r.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }),
+    r.tempo ? `${r.tempo} BPM ${r.timeSig}` : '',
+    score ? `♪ ${score.title}` : '',
+  ].filter(Boolean).join(' · ');
+}
+
+async function editDetails() {
+  const patch = await openDetailsDialog(rec);
+  if (!patch || !rec) return;
+  rec = { ...rec, ...patch };
+  renderTitle();
+  flushSave();
+}
+
 function close() {
   const cb = onCloseCb;
   closePlayer();
@@ -151,7 +171,9 @@ function markup() {
     <div class="player">
       <div class="player-head">
         <button class="btn icon p-back" aria-label="Back to recordings">${svg('M15 5l-7 7 7 7')}</button>
-        <div class="player-title"><div class="p-name rec-name"></div><div class="p-meta rec-meta"></div></div>
+        <button class="player-title p-details" aria-label="Rename or link to a score"><div class="p-name rec-name"></div><div class="p-meta rec-meta"></div></button>
+        <button class="btn icon p-edit" aria-label="Edit">${svg('M6 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM6 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7.5 7.5L20 18M7.5 16.5L20 6')}</button>
+        <button class="btn icon p-share" aria-label="Share">${svg('M12 3v12M7 8l5-5 5 5M5 13v7h14v-7')}</button>
       </div>
       <div class="wave-wrap"><canvas class="wave" aria-label="Waveform. Tap to seek, drag to set the loop."></canvas></div>
       <div class="out-level" aria-hidden="true"><div class="out-fill"></div></div>
@@ -178,6 +200,19 @@ function markup() {
 
 function bind() {
   $('.p-back', root).addEventListener('click', close);
+  $('.p-details', root).addEventListener('click', editDetails);
+  $('.p-share', root).addEventListener('click', () => {
+    if (!rec) return;
+    flushSave();
+    audio.pause();
+    openShareDialog({ ...rec });
+  });
+  $('.p-edit', root).addEventListener('click', () => {
+    if (!rec) return;
+    const id = rec.id, cb = onEditCb;
+    closePlayer();
+    cb?.(id);
+  });
   $('.play', root).addEventListener('click', togglePlay);
   $('.back5', root).addEventListener('click', () => seek(audio.currentTime - BACK_SEC));
   $('.to-a', root).addEventListener('click', () => seek(loop.a ?? 0));

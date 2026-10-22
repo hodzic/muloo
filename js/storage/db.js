@@ -39,6 +39,17 @@ export const getAll = (store, query) => run(store, 'readonly', (s) => s.getAll(q
 export const put = (store, value) => run(store, 'readwrite', (s) => s.put(value));
 export const del = (store, key) => run(store, 'readwrite', (s) => s.delete(key));
 
+/** Run `fn(tx)` in one transaction over several stores; resolves on commit. */
+export async function transaction(stores, mode, fn) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(stores, mode);
+    fn(tx);
+    tx.oncomplete = () => resolve();
+    tx.onerror = tx.onabort = () => reject(tx.error);
+  });
+}
+
 export const isQuotaError = (e) => e?.name === 'QuotaExceededError';
 
 // Settings are loaded once at startup and then read synchronously.

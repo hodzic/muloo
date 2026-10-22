@@ -4,6 +4,7 @@
 
 import { getContext } from '../audio/context.js';
 import { acquireInput, releaseInput, onInputChange } from '../audio/input.js';
+import { createCaptureNode } from '../audio/capture.js';
 import { metronome } from '../metronome/scheduler.js';
 import { floatToInt16 } from '../util/wav.js';
 import { saveRecording, putChunk, deleteRecording } from '../storage/recordings.js';
@@ -11,7 +12,6 @@ import { holdWakeLock, releaseWakeLock } from '../util/wakelock.js';
 
 export const MAX_SECONDS = 15 * 60;
 
-let workletReady = null;
 let session = null;
 const listeners = new Set();
 
@@ -55,15 +55,7 @@ export async function startRecording({ countInBars = 0 } = {}) {
   const input = await acquireInput('recorder');
   try {
     const ctx = getContext();
-    workletReady ??= ctx.audioWorklet.addModule(new URL('./capture-worklet.js', import.meta.url));
-    await workletReady;
-    const node = new AudioWorkletNode(ctx, 'muloo-capture', {
-      numberOfInputs: 1,
-      numberOfOutputs: 0,
-      channelCount: 1,
-      channelCountMode: 'explicit',
-      channelInterpretation: 'speakers',
-    });
+    const node = await createCaptureNode(ctx);
     input.gain.connect(node);
 
     const now = new Date();

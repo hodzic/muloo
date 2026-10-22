@@ -24,8 +24,8 @@ const placeholder = (title, text, { mini = false } = {}) => ({
 const VIEWS = {
   tune: { title: 'Tune', module: tuner },
   practice: { title: 'Practice', module: practice },
-  scores: { title: 'Scores', module: placeholder('Scores', 'PDF import, the viewer and page turns arrive in milestone 4.', { mini: true }) },
-  recordings: { title: 'Recordings', module: placeholder('Recordings', 'Your takes will be listed here, newest first, once the recorder lands (milestone 5).') },
+  scores: { title: 'Scores', module: placeholder('Scores', 'PDF import, the viewer and page turns arrive in milestone 5.', { mini: true }) },
+  recordings: { title: 'Recordings', module: placeholder('Recordings', 'Your takes will be listed here, newest first, once the recorder lands (milestone 4).') },
 };
 
 let currentTab = null;

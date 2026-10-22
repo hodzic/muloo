@@ -21,7 +21,7 @@ export function mount(el) {
         <p class="hint">No score loaded. Score view and auto-scroll come in a later milestone.</p>
       </div>
       <div class="metro-slot"></div>
-      <button class="btn record wide" disabled title="Recording arrives in milestone 5">● Record</button>
+      <button class="btn record wide" disabled title="Recording arrives in milestone 4">● Record</button>
     </div>`;
   createMetronomeBar($('.metro-slot', el), { flashTarget: $('.stage', el) });
   metronome.onChange(() => {

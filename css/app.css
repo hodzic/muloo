@@ -488,9 +488,9 @@ body.practice-full .practice { gap: 6px; }
 .ps-rows .btn { white-space: nowrap; }
 
 /* Tuner reference tone */
-.strings .string.playing { background: var(--accent); border-color: var(--accent); color: var(--accent-text); animation: tone-pulse 1.2s ease-in-out infinite; }
+.strings .string.playing { background: var(--accent); border-color: var(--accent); color: var(--accent-text); animation: tone-pulse 2s ease-out; }
 .strings .string.playing sub { color: var(--accent-text); }
-@keyframes tone-pulse { 50% { filter: brightness(1.25); } }
+@keyframes tone-pulse { 0% { filter: brightness(1.5); } 100% { filter: brightness(1); } }
 .tuner-display.reference .note { color: var(--accent); }
 .tuner-display.reference .needle { opacity: 0.25; }
 .tuner-display.reference .cents-value { color: var(--accent); }

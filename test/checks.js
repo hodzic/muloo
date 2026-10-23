@@ -6,6 +6,7 @@ import { crop, applyGain, normalize, peak, peakDb } from '../js/editor/edit-ops.
 import { analyzeBeats, stringPairs, beatTarget } from '../js/tuner/beats.js';
 import { flatten, parseOrder, formatOrder, playOrder, orderFromMarkers, barPlan, validateMap } from '../js/scores/score-map.js';
 import { detectPage } from '../js/scores/detect.js';
+import { pluckSamples } from '../js/tuner/pluck.js';
 
 /** Synthetic engraved page: staves, joined systems, barlines, a stem. */
 function syntheticPage() {
@@ -237,6 +238,32 @@ export function runDspChecks() {
       && det[0].y0 * 2 < 100 && det[0].y1 * 2 > 251 && det[1].y0 * 2 < 450 && det[1].y1 * 2 > 491,
     detail: `${det.length} systems; [${m1}] [${m2}]`,
   });
+
+  // Reference pluck: in tune, decays, ends in silence at 2 s.
+  {
+    let worst = 0, worstNote = '', decayOk = true, endOk = true;
+    for (const note of ['E2', 'A2', 'D3', 'G3', 'B3', 'E4', 'C4', 'G4', 'A4', 'D2']) {
+      const f = midiToFreq(parseNote(note));
+      for (const sr of [48000, 44100]) {
+        const s = pluckSamples(f, sr);
+        const win = (t) => s.subarray(Math.round(t * sr), Math.round(t * sr) + 4096);
+        for (const t of [0.2, 1.0]) {
+          const r = yin(win(t), sr);
+          const err = r ? Math.abs(cents(r.freq, f)) : Infinity;
+          if (err > worst) { worst = err; worstNote = `${note} @${t}s ${sr / 1000}k`; }
+        }
+        const lvl = (t) => Math.sqrt(win(t).reduce((a, v) => a + v * v, 0) / 4096);
+        // Decays, but still clearly sounding after 1.5 s (sustain).
+        if (!(lvl(0.1) > lvl(1.0) && lvl(1.0) > lvl(1.5) && lvl(1.5) > lvl(0.1) * 0.05)) decayOk = false;
+        if (s.length !== 2 * sr || s[s.length - 1] !== 0 || Math.max(...s.subarray(s.length - 50).map(Math.abs)) > 1e-3) endOk = false;
+      }
+    }
+    results.push({
+      name: 'Reference pluck: pitch within ±1 ¢, decays with sustain, silent at 2 s',
+      pass: worst <= 1 && decayOk && endOk,
+      detail: `worst ${worst.toFixed(3)} ¢ (${worstNote}); decay ${decayOk ? 'ok' : 'wrong'}; end ${endOk ? 'silent' : 'not silent'}`,
+    });
+  }
 
   return results;
 }

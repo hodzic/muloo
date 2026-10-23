@@ -3,7 +3,7 @@
 import { yin, rms, median, noteInfo, parseNote, midiToFreq, cents, noteName, noteOctave } from './pitch.js';
 import { INSTRUMENTS, getPreset, defaultPresetKey } from './presets.js';
 import { mountBeats, renderBeats, startBeats, stopBeats } from './beats-ui.js';
-import { playTone, stopTone } from './reference-tone.js';
+import { pluck, stopTone } from './reference-tone.js';
 import { acquireInput, releaseInput, getInput, gainToDb } from '../audio/input.js';
 import { canStartAudio } from '../audio/context.js';
 import { settings } from '../storage/db.js';
@@ -27,7 +27,8 @@ let lastValid = 0;
 let history = [];
 let shownCents = 0;
 let shownMidi = null;
-let toneString = null; // index of the string whose reference tone is playing
+let toneString = null; // index of the string whose reference pluck is ringing
+let toneToken = 0;
 
 const state = () => ({
   instrument: settings.get('tuner.instrument', 'guitar'),
@@ -105,7 +106,6 @@ export function mount(el) {
   });
   const stepA4 = (d) => {
     settings.set('tuner.a4', Math.max(A4_MIN, Math.min(A4_MAX, state().a4 + d)));
-    if (toneString != null) setTone(toneString); // retune to the new reference
     renderSettings();
   };
   onPressRepeat($('.a4-down', el), () => stepA4(-1));
@@ -114,7 +114,7 @@ export function mount(el) {
     const b = e.target.closest('[data-string]');
     if (!b) return;
     const i = +b.dataset.string;
-    setTone(toneString === i ? null : i);
+    setTone(i); // every tap plucks, including the string that is ringing
   });
   renderSettings();
 }
@@ -167,12 +167,13 @@ function renderStrings(activeMidi = shownMidi) {
 }
 
 /**
- * Play string `i`'s pitch as a reference tone, or stop with null. While it
- * plays, pitch detection pauses (the mic would hear the speaker) and the
- * display shows the reference note.
+ * Pluck string `i` as a reference (it rings for two seconds), or stop with
+ * null. While it rings, pitch detection pauses (the mic would hear the
+ * speaker) and the display shows the reference note.
  */
 function setTone(i) {
   const strings = presetStrings();
+  const token = ++toneToken;
   toneString = i != null && i < strings.length ? i : null;
   const d = $('.tuner-display', root);
   if (toneString == null) {
@@ -187,7 +188,8 @@ function setTone(i) {
   } else {
     const midi = strings[toneString];
     const freq = midiToFreq(midi, state().a4);
-    playTone(freq);
+    // When it dies away, go back to listening (unless another tap took over).
+    pluck(freq, { onEnd: () => { if (token === toneToken) setTone(null); } });
     d.classList.remove('idle', 'in-tune');
     d.classList.add('reference');
     shownMidi = midi;

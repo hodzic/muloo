@@ -486,3 +486,11 @@ body.practice-full .practice { gap: 6px; }
 .me-popover input, .me-popover select { min-height: 40px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; }
 .viewer-head .btn:not(.icon) { padding: 0 10px; }
 .ps-rows .btn { white-space: nowrap; }
+
+/* Tuner reference tone */
+.strings .string.playing { background: var(--accent); border-color: var(--accent); color: var(--accent-text); animation: tone-pulse 1.2s ease-in-out infinite; }
+.strings .string.playing sub { color: var(--accent-text); }
+@keyframes tone-pulse { 50% { filter: brightness(1.25); } }
+.tuner-display.reference .note { color: var(--accent); }
+.tuner-display.reference .needle { opacity: 0.25; }
+.tuner-display.reference .cents-value { color: var(--accent); }

@@ -1,7 +1,6 @@
 // App init and routing between tabs.
 
 import { settings, requestPersistence } from './storage/db.js';
-import { installGestureResume } from './audio/context.js';
 import { initSettings } from './settings-ui.js';
 import * as tuner from './tuner/tuner-ui.js';
 import * as practice from './practice/practice-ui.js';
@@ -68,7 +67,6 @@ function registerServiceWorker() {
 
 async function init() {
   await settings.load();
-  installGestureResume();
   initSettings($('#settings-btn'), $('#settings-dialog'));
 
   for (const [key, view] of Object.entries(VIEWS)) view.module.mount($(`#view-${key}`));

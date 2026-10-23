@@ -2,7 +2,7 @@
 // gain, normalize and one level of undo. Each edit is saved immediately;
 // undo restores the previous audio until the next edit or leaving.
 
-import { getContext, resume } from '../audio/context.js';
+import { getContext, holdAudio, releaseAudio } from '../audio/context.js';
 import { getRecording, loadPcm, replacePcm } from '../storage/recordings.js';
 import { isQuotaError } from '../storage/db.js';
 import { int16ToFloat } from '../util/wav.js';
@@ -326,11 +326,11 @@ function onPointerUp(e) {
 
 async function togglePlay() {
   if (player) { stopPlayback(); return; }
-  const ctx = await resume();
+  const ctx = await holdAudio('editor');
   const from = cursor > sel.a && cursor < sel.b ? cursor : sel.a;
   const sr = rec.sampleRate;
   const slice = int16ToFloat(pcm.subarray(Math.round(from * sr), Math.round(sel.b * sr)));
-  if (!slice.length) return;
+  if (!slice.length) { releaseAudio('editor'); return; }
   const buf = ctx.createBuffer(1, slice.length, sr);
   buf.copyToChannel(slice, 0);
   const src = ctx.createBufferSource();
@@ -347,6 +347,7 @@ function stopPlayback() {
   const p = player;
   player = null;
   try { p.src.stop(); } catch { /* already ended */ }
+  releaseAudio('editor');
   if (root) {
     $('.e-play', root).classList.remove('selected');
     draw();

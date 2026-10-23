@@ -31,6 +31,7 @@ let shownMidi = null;
 let shownString = null; // preset string the reading is relative to, or null for a plain note
 let toneString = null; // index of the string whose reference pluck is ringing
 let toneToken = 0;
+let listening = false; // mic open and analysing
 
 const state = () => ({
   instrument: settings.get('tuner.instrument', 'guitar'),
@@ -42,9 +43,12 @@ export function mount(el) {
   root = el;
   el.innerHTML = `
     <div class="tuner">
-      <div class="segmented tuner-mode" role="radiogroup" aria-label="Tuner mode">
-        <button class="btn" data-tuner-mode="standard" role="radio">Standard</button>
-        <button class="btn" data-tuner-mode="beats" role="radio">Beats</button>
+      <div class="tuner-top">
+        <div class="segmented tuner-mode" role="radiogroup" aria-label="Tuner mode">
+          <button class="btn" data-tuner-mode="standard" role="radio">Standard</button>
+          <button class="btn" data-tuner-mode="beats" role="radio">Beats</button>
+        </div>
+        <button class="btn listen-btn" aria-pressed="false"></button>
       </div>
       <div class="beats-panel" hidden></div>
       <div class="tuner-display idle">
@@ -83,11 +87,21 @@ export function mount(el) {
     </div>`;
 
   mountBeats($('.beats-panel', el));
+  $('.listen-btn', el).addEventListener('click', () => {
+    if (listening) {
+      settings.set('tuner.listen', false);
+      stopListening();
+    } else {
+      settings.set('tuner.listen', true);
+      start();
+    }
+  });
+  renderListen();
   $$('[data-tuner-mode]', el).forEach((b) => b.addEventListener('click', () => {
     settings.set('tuner.mode', b.dataset.tunerMode);
     setTone(null);
     renderMode();
-    if (active && getInput()) {
+    if (active && listening) {
       if (beatMode()) startBeats(); else stopBeats();
     }
   }));
@@ -212,18 +226,37 @@ function setTone(i) {
 
 export async function enter() {
   active = true;
-  holdWakeLock('tuner');
-  if (canStartAudio()) start();
+  // Listens straight away unless it was switched off last time.
+  if (!settings.get('tuner.listen', true)) renderListen();
+  else if (canStartAudio()) start();
   else showMessage('Tap to start the tuner.', 'Start');
 }
 
 export function leave() {
   active = false;
   setTone(null);
+  stopListening();
+}
+
+/** Release the mic (and with it audio focus) and stop analysing. */
+function stopListening() {
+  listening = false;
   cancelAnimationFrame(raf);
   stopBeats();
   releaseInput('tuner');
   releaseWakeLock('tuner');
+  hideMessage();
+  setIdle(true);
+  $('.level-fill', root).style.width = '0%';
+  renderListen();
+}
+
+function renderListen() {
+  const b = $('.listen-btn', root);
+  b.classList.toggle('on', listening);
+  b.setAttribute('aria-pressed', listening);
+  b.setAttribute('aria-label', listening ? 'Stop listening' : 'Start listening');
+  b.textContent = listening ? '● Mic on' : 'Mic off';
 }
 
 async function start() {
@@ -241,7 +274,10 @@ async function start() {
     }
     return;
   }
-  if (!active) return;
+  if (!active) { releaseInput('tuner'); return; }
+  listening = true;
+  holdWakeLock('tuner');
+  renderListen();
   history = [];
   lastValid = 0;
   cancelAnimationFrame(raf);

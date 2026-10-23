@@ -2,7 +2,7 @@
 // Several features can hold the input at once; the mic is released when the
 // last one lets go.
 
-import { getContext, resume } from './context.js';
+import { getContext, holdAudio, releaseAudio } from './context.js';
 import { settings } from '../storage/db.js';
 
 export const GAIN_MAX_DB = 24;
@@ -34,16 +34,21 @@ export async function listInputs() {
 }
 
 async function open() {
-  const ctx = await resume();
+  const ctx = await holdAudio('input');
   const audio = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
   const deviceId = settings.get('inputDeviceId', '');
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: deviceId ? { ...audio, deviceId: { exact: deviceId } } : audio });
   } catch (e) {
-    // A remembered USB mic that is unplugged: fall back to the default input.
-    if (!deviceId || (e.name !== 'OverconstrainedError' && e.name !== 'NotFoundError')) throw e;
-    stream = await navigator.mediaDevices.getUserMedia({ audio });
+    try {
+      // A remembered USB mic that is unplugged: fall back to the default input.
+      if (!deviceId || (e.name !== 'OverconstrainedError' && e.name !== 'NotFoundError')) throw e;
+      stream = await navigator.mediaDevices.getUserMedia({ audio });
+    } catch (e2) {
+      if (!current) releaseAudio('input');
+      throw e2;
+    }
   }
   const source = ctx.createMediaStreamSource(stream);
   const gain = ctx.createGain();
@@ -62,6 +67,7 @@ function close() {
   current.source.disconnect();
   current.gain.disconnect();
   current = null;
+  releaseAudio('input');
 }
 
 /** Open (or share) the mic. Rejects with the getUserMedia error, e.g. NotAllowedError. */

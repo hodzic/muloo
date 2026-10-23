@@ -1,8 +1,10 @@
 // Tuner tab: standard mode (DESIGN.md §5.1) and beat mode (§5.2, beats-ui.js).
 
-import { yin, rms, median, noteInfo, parseNote, midiToFreq, cents, noteName, noteOctave } from './pitch.js';
+import { yin, rms, median, parseNote, midiToFreq, cents, noteName, noteOctave } from './pitch.js';
 import { INSTRUMENTS, getPreset, defaultPresetKey } from './presets.js';
 import { mountBeats, renderBeats, startBeats, stopBeats } from './beats-ui.js';
+import { pluck, stopTone } from './reference-tone.js';
+import { chooseTarget } from './target.js';
 import { acquireInput, releaseInput, getInput, gainToDb } from '../audio/input.js';
 import { canStartAudio } from '../audio/context.js';
 import { settings } from '../storage/db.js';
@@ -26,7 +28,9 @@ let lastValid = 0;
 let history = [];
 let shownCents = 0;
 let shownMidi = null;
-let lockedString = null; // index into the preset's strings, or null for auto
+let shownString = null; // preset string the reading is relative to, or null for a plain note
+let toneString = null; // index of the string whose reference pluck is ringing
+let toneToken = 0;
 
 const state = () => ({
   instrument: settings.get('tuner.instrument', 'guitar'),
@@ -58,6 +62,7 @@ export function mount(el) {
           <span class="cents-value">— ¢</span>
           <span class="hz-value">— Hz</span>
         </div>
+        <div class="tune-hint" aria-live="polite"></div>
         <div class="level" aria-hidden="true"><div class="level-fill"></div></div>
       </div>
       <div class="mic-message" hidden></div>
@@ -80,6 +85,7 @@ export function mount(el) {
   mountBeats($('.beats-panel', el));
   $$('[data-tuner-mode]', el).forEach((b) => b.addEventListener('click', () => {
     settings.set('tuner.mode', b.dataset.tunerMode);
+    setTone(null);
     renderMode();
     if (active && getInput()) {
       if (beatMode()) startBeats(); else stopBeats();
@@ -91,14 +97,14 @@ export function mount(el) {
     const instrument = b.dataset.instrument;
     settings.set('tuner.instrument', instrument);
     settings.set('tuner.preset', settings.get(`tuner.preset.${instrument}`, defaultPresetKey(instrument)));
-    lockedString = null;
+    setTone(null);
     renderSettings();
   }));
   $('.preset', el).addEventListener('change', (e) => {
     const { instrument } = state();
     settings.set('tuner.preset', e.target.value);
     settings.set(`tuner.preset.${instrument}`, e.target.value);
-    lockedString = null;
+    setTone(null);
     renderSettings();
   });
   const stepA4 = (d) => {
@@ -111,8 +117,7 @@ export function mount(el) {
     const b = e.target.closest('[data-string]');
     if (!b) return;
     const i = +b.dataset.string;
-    lockedString = lockedString === i ? null : i;
-    renderStrings();
+    setTone(i); // every tap plucks, including the string that is ringing
   });
   renderSettings();
 }
@@ -138,6 +143,7 @@ function renderSettings() {
     .map(([k, v]) => `<option value="${k}">${escapeHtml(v.label)}</option>`).join('');
   sel.value = INSTRUMENTS[instrument].presets[preset] ? preset : defaultPresetKey(instrument);
   $('.a4-value', root).textContent = `A4 = ${a4} Hz`;
+  shownString = null; // string indices belong to the previous tuning
   renderStrings();
   renderBeats();
 }
@@ -156,22 +162,52 @@ function renderMode() {
   $('.strings', root).hidden = beats;
 }
 
-function renderStrings(activeMidi = shownMidi) {
+function renderStrings() {
   const strings = presetStrings();
-  const target = lockedString ?? nearestString(activeMidi, strings);
+  const target = toneString ?? shownString;
   $('.strings', root).innerHTML = strings.map((m, i) => `
-    <button class="btn string${i === target ? ' target' : ''}${i === lockedString ? ' locked' : ''}" data-string="${i}"
-      aria-pressed="${i === lockedString}">${noteName(m)}<sub>${noteOctave(m)}</sub></button>`).join('');
+    <button class="btn string${i === target ? ' target' : ''}${i === toneString ? ' playing' : ''}" data-string="${i}"
+      aria-pressed="${i === toneString}" aria-label="Play ${noteName(m)}${noteOctave(m)}">${noteName(m)}<sub>${noteOctave(m)}</sub></button>`).join('');
 }
 
-function nearestString(midi, strings) {
-  if (midi == null) return null;
-  let best = null, bestD = 1.01; // within about a semitone
-  strings.forEach((m, i) => {
-    const d = Math.abs(m - midi);
-    if (d < bestD) { bestD = d; best = i; }
-  });
-  return best;
+/**
+ * Pluck string `i` as a reference (it rings for two seconds), or stop with
+ * null. While it rings, pitch detection pauses (the mic would hear the
+ * speaker) and the display shows the reference note.
+ */
+function setTone(i) {
+  const strings = presetStrings();
+  const token = ++toneToken;
+  toneString = i != null && i < strings.length ? i : null;
+  const d = $('.tuner-display', root);
+  if (toneString == null) {
+    stopTone();
+    if (d.classList.contains('reference')) {
+      d.classList.remove('reference');
+      $('.cents-value', root).textContent = '— ¢';
+      $('.hz-value', root).textContent = '— Hz';
+      setIdle(true);
+      shownMidi = null;
+      shownString = null;
+    }
+  } else {
+    const midi = strings[toneString];
+    const freq = midiToFreq(midi, state().a4);
+    // When it dies away, go back to listening (unless another tap took over).
+    pluck(freq, { onEnd: () => { if (token === toneToken) setTone(null); } });
+    d.classList.remove('idle', 'in-tune');
+    d.classList.add('reference');
+    shownMidi = midi;
+    $('.note-name', root).textContent = noteName(midi);
+    $('.note-oct', root).textContent = noteOctave(midi);
+    $('.needle', root).style.transform = 'rotate(0deg)';
+    $('.cents-value', root).textContent = '♪ reference';
+    $('.tune-hint', root).textContent = '';
+    $('.hz-value', root).textContent = `${freq.toFixed(2)} Hz`;
+    $('.level-fill', root).style.width = '0%';
+  }
+  history = [];
+  renderStrings();
 }
 
 export async function enter() {
@@ -183,6 +219,7 @@ export async function enter() {
 
 export function leave() {
   active = false;
+  setTone(null);
   cancelAnimationFrame(raf);
   stopBeats();
   releaseInput('tuner');
@@ -226,7 +263,7 @@ function hideMessage() {
 function loop(now) {
   if (!active) return;
   raf = requestAnimationFrame(loop);
-  if (beatMode() || now - lastAnalysis < ANALYSIS_MS) return;
+  if (beatMode() || toneString != null || now - lastAnalysis < ANALYSIS_MS) return;
   lastAnalysis = now;
   const input = getInput();
   if (!input) return;
@@ -258,31 +295,29 @@ function loop(now) {
 
 function update(freq) {
   const { a4 } = state();
-  let midi, c;
-  if (lockedString != null) {
-    midi = presetStrings()[lockedString];
-    c = cents(freq, midiToFreq(midi, a4));
+  // Relative to the nearest string of the tuning, however far off; a plain
+  // note when no string is near (see target.js).
+  const t = chooseTarget(freq, presetStrings(), a4, shownString);
+  if (t.midi !== shownMidi || t.string !== shownString) {
+    shownMidi = t.midi;
+    shownString = t.string;
+    shownCents = t.cents;
+    $('.note-name', root).textContent = noteName(t.midi);
+    $('.note-oct', root).textContent = noteOctave(t.midi);
+    renderStrings();
   } else {
-    const n = noteInfo(freq, a4);
-    midi = n.midi;
-    c = n.cents;
-  }
-  if (midi !== shownMidi) {
-    shownMidi = midi;
-    shownCents = c;
-    $('.note-name', root).textContent = noteName(midi);
-    $('.note-oct', root).textContent = noteOctave(midi);
-    renderStrings(midi);
-  } else {
-    shownCents += 0.35 * (c - shownCents);
+    shownCents += 0.35 * (t.cents - shownCents);
   }
   setIdle(false);
   const shown = Math.max(-50, Math.min(50, shownCents));
   $('.needle', root).style.transform = `rotate(${(shown / 50) * 60}deg)`;
-  const off = Math.abs(shownCents) > 50 ? (shownCents > 0 ? ' ▲' : ' ▼') : '';
-  $('.cents-value', root).textContent = `${shownCents >= 0 ? '+' : '−'}${Math.abs(shownCents).toFixed(1)} ¢${off}`;
+  const abs = Math.abs(shownCents);
+  $('.cents-value', root).textContent = `${shownCents >= 0 ? '+' : '−'}${abs.toFixed(abs >= 100 ? 0 : 1)} ¢`;
   $('.hz-value', root).textContent = `${freq.toFixed(2)} Hz`;
-  $('.tuner-display', root).classList.toggle('in-tune', Math.abs(shownCents) <= IN_TUNE_CENTS);
+  const inTune = abs <= IN_TUNE_CENTS;
+  $('.tune-hint', root).textContent = inTune || t.string == null ? '' : shownCents < 0 ? '▲ Tune up' : '▼ Tune down';
+  $('.tuner-display', root).classList.toggle('in-tune', inTune);
+  $('.tuner-display', root).classList.toggle('far', abs > 50);
 }
 
 function setIdle(idle) {
@@ -290,7 +325,8 @@ function setIdle(idle) {
   if (d.classList.contains('idle') === idle) return;
   d.classList.toggle('idle', idle);
   if (idle) {
-    d.classList.remove('in-tune');
+    d.classList.remove('in-tune', 'far');
+    $('.tune-hint', root).textContent = '';
     $('.needle', root).style.transform = 'rotate(0deg)';
   }
 }

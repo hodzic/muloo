@@ -1,7 +1,7 @@
 // Reference pitch for tuning by ear: a plucked string (pluck.js) that rings
 // for two seconds and stops.
 
-import { getContext, resume } from '../audio/context.js';
+import { getContext, holdAudio, releaseAudio } from '../audio/context.js';
 import { pluckSamples } from './pluck.js';
 
 const LEVEL = 0.6;
@@ -9,6 +9,7 @@ const CUT = 0.015; // fade when a new pluck cuts the previous one off
 
 const buffers = new Map(); // `${freq}@${sampleRate}` → AudioBuffer
 let voice = null; // { src, gain, onEnd }
+let nextId = 0;
 
 function bufferFor(ctx, freq) {
   const key = `${freq.toFixed(3)}@${ctx.sampleRate}`;
@@ -24,7 +25,8 @@ function bufferFor(ctx, freq) {
 
 /** Pluck a string at `freq` Hz. `onEnd` runs when it has died away (or is cut off). */
 export async function pluck(freq, { onEnd } = {}) {
-  const ctx = await resume();
+  const hold = `pluck:${++nextId}`;
+  const ctx = await holdAudio(hold);
   stopTone();
   const src = ctx.createBufferSource();
   src.buffer = bufferFor(ctx, freq);
@@ -33,6 +35,7 @@ export async function pluck(freq, { onEnd } = {}) {
   src.connect(gain).connect(ctx.destination);
   const v = { src, gain, onEnd };
   src.onended = () => {
+    releaseAudio(hold);
     if (voice === v) voice = null;
     v.onEnd?.();
   };

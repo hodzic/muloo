@@ -3,7 +3,7 @@
 // The A/B loop is enforced from requestAnimationFrame. Loop points, loop
 // state and speed are remembered per recording.
 
-import { getContext, resume } from '../audio/context.js';
+import { getContext, holdAudio, releaseAudio } from '../audio/context.js';
 import { readLevel } from '../audio/input.js';
 import { loadPcm, getRecording, saveRecording, durationSec } from '../storage/recordings.js';
 import { encodeWav } from '../util/wav.js';
@@ -136,6 +136,7 @@ export function closePlayer() {
   }
   if (url) URL.revokeObjectURL(url);
   releaseWakeLock('player');
+  releaseAudio('player');
   if (root) root.innerHTML = '';
   rec = pcm = url = peaks = root = null;
   drag = null;
@@ -303,13 +304,14 @@ const loopActive = () => loop.on && loop.a != null && loop.b != null;
 async function togglePlay() {
   if (!rec) return;
   if (!audio.paused) { audio.pause(); return; }
-  await resume();
+  await holdAudio('player');
   if (loopActive() && (audio.currentTime < loop.a || audio.currentTime >= loop.b)) audio.currentTime = loop.a;
   gain.gain.cancelScheduledValues(0);
   gain.gain.value = 1;
   try {
     await audio.play();
   } catch (e) {
+    releaseAudio('player');
     toast(`Could not play: ${e.message}`);
   }
 }
@@ -377,6 +379,7 @@ function onPlayState() {
     : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg>';
   b.setAttribute('aria-label', playing ? 'Pause' : 'Play');
   if (playing) holdWakeLock('player'); else releaseWakeLock('player');
+  if (!playing) releaseAudio('player');
 }
 
 function onKey(e) {

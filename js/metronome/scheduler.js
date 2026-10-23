@@ -3,7 +3,7 @@
 // 100 ms. Audio is never triggered from a timer directly, and the visual
 // beat is dispatched from the scheduled times, not from the timer.
 
-import { getContext } from '../audio/context.js';
+import { getContext, holdAudio, releaseAudio } from '../audio/context.js';
 
 export const BPM_MIN = 30;
 export const BPM_MAX = 250;
@@ -143,6 +143,7 @@ export class Metronome {
       setTimeout(() => out.disconnect(), 200);
       this.#out = null;
     }
+    releaseAudio('metronome');
     this.#emit('change', this);
   }
 
@@ -155,6 +156,7 @@ export class Metronome {
   #begin(atTime, countInBars, keepClicking) {
     const ctx = getContext();
     if (this.running) this.stop();
+    holdAudio('metronome').catch(() => {});
     this.running = true;
     this.#next = Math.max(atTime ?? ctx.currentTime + 0.05, ctx.currentTime + 0.01);
     this.#bar = -countInBars;

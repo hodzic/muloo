@@ -500,3 +500,15 @@ body.practice-full .practice { gap: 6px; }
 .tuner-display.idle .tune-hint { opacity: 0.35; }
 .tuner-display.far .needle line { stroke: var(--warn); }
 .tuner-display.far .needle circle { fill: var(--warn); }
+
+/* Practice: mic off until recording or level check */
+.meter.off { opacity: 0.35; }
+.level-check { flex: none; padding: 0 12px; font-weight: 500; }
+.level-check.selected { background: var(--bad); border-color: var(--bad); color: #fff; }
+.mic-btn { max-width: 34%; }
+
+/* Tuner: listen on/off */
+.tuner-top { display: flex; gap: 8px; }
+.tuner-top .tuner-mode { flex: 1; }
+.listen-btn { flex: none; padding: 0 12px; font-weight: 600; color: var(--muted); }
+.listen-btn.on { color: var(--bad); border-color: var(--bad); }

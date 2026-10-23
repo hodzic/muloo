@@ -4,7 +4,7 @@ import { listInputs, setInputDevice, setInputGainDb, looksBluetooth, getInput, o
 import { settings } from './storage/db.js';
 import { $, escapeHtml, formatBytes } from './util/dom.js';
 
-export const APP_VERSION = 'gp-v11';
+export const APP_VERSION = 'gp-v12';
 
 let dialog;
 
@@ -21,6 +21,20 @@ export function initSettings(button, dlg) {
         <input class="input-gain" type="range" min="0" max="${GAIN_MAX_DB}" step="1">
       </label>
       <p class="muted">Raise the gain for low-output USB mics.</p>
+      <h3>If other apps' audio crackles while the mic is on</h3>
+      <label>Audio buffers
+        <select class="audio-latency">
+          <option value="interactive">Low latency</option>
+          <option value="playback">Large (steadier)</option>
+        </select>
+      </label>
+      <label>Mic processing
+        <select class="mic-voice">
+          <option value="off">Off (raw, best for tuning)</option>
+          <option value="on">Voice (call mode)</option>
+        </select>
+      </label>
+      <p class="muted audio-note">Buffer changes apply after reloading the app.</p>
       <h3>Storage</h3>
       <p class="storage muted">…</p>
       <p class="muted">MuLoo ${APP_VERSION} · all data stays on this device.</p>
@@ -39,12 +53,20 @@ export function initSettings(button, dlg) {
     setInputGainDb(+e.target.value);
     $('.gain-out', dialog).textContent = `+${e.target.value} dB`;
   });
+  $('.audio-latency', dialog).addEventListener('change', (e) => settings.set('audioLatency', e.target.value));
+  $('.mic-voice', dialog).addEventListener('change', async (e) => {
+    settings.set('micVoice', e.target.value === 'on');
+    // Reopen the mic with the new constraints if it is in use.
+    try { await setInputDevice(settings.get('inputDeviceId', '')); } catch (err) { console.warn(err); }
+  });
   onInputChange(() => { if (dialog.open) renderDevices(); });
 
   button.addEventListener('click', () => {
     const g = settings.get('inputGainDb', 0);
     $('.input-gain', dialog).value = g;
     $('.gain-out', dialog).textContent = `+${g} dB`;
+    $('.audio-latency', dialog).value = settings.get('audioLatency', 'interactive');
+    $('.mic-voice', dialog).value = settings.get('micVoice', false) ? 'on' : 'off';
     renderDevices();
     renderStorage();
     dialog.showModal();

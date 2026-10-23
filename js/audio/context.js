@@ -5,6 +5,8 @@
 // suspended. On Android a running AudioContext holds audio focus even when
 // silent, which pauses or ducks other apps (e.g. Spotify).
 
+import { settings } from '../storage/db.js';
+
 const SUSPEND_AFTER_MS = 1500;
 
 let ctx = null;
@@ -13,7 +15,10 @@ let suspendTimer = 0;
 
 export function getContext() {
   if (!ctx) {
-    ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+    // 'playback' asks for bigger output buffers; on some phones that stops
+    // crackle in other apps' audio while the mic is open (Settings).
+    const latencyHint = settings.get('audioLatency', 'interactive');
+    ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint });
     // Created after a tap it starts running; don't keep it running for nothing.
     scheduleSuspend();
   }

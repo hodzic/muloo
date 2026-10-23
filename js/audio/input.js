@@ -35,7 +35,10 @@ export async function listInputs() {
 
 async function open() {
   const ctx = await holdAudio('input');
-  const audio = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
+  // Raw input by default; voice processing puts Android in call mode, which
+  // some phones handle better than raw input next to music (Settings).
+  const voice = settings.get('micVoice', false);
+  const audio = { echoCancellation: voice, noiseSuppression: voice, autoGainControl: voice, channelCount: 1 };
   const deviceId = settings.get('inputDeviceId', '');
   let stream;
   try {

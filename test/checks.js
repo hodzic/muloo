@@ -7,6 +7,7 @@ import { analyzeBeats, stringPairs, beatTarget } from '../js/tuner/beats.js';
 import { flatten, parseOrder, formatOrder, playOrder, orderFromMarkers, barPlan, validateMap } from '../js/scores/score-map.js';
 import { detectPage } from '../js/scores/detect.js';
 import { pluckSamples } from '../js/tuner/pluck.js';
+import { chooseTarget } from '../js/tuner/target.js';
 
 /** Synthetic engraved page: staves, joined systems, barlines, a stem. */
 function syntheticPage() {
@@ -262,6 +263,29 @@ export function runDspChecks() {
       name: 'Reference pluck: pitch within ±1 ¢, decays with sustain, silent at 2 s',
       pass: worst <= 1 && decayOk && endOk,
       detail: `worst ${worst.toFixed(3)} ¢ (${worstNote}); decay ${decayOk ? 'ok' : 'wrong'}; end ${endOk ? 'silent' : 'not silent'}`,
+    });
+  }
+
+  // String-aware auto mode.
+  {
+    const std = ['E2', 'A2', 'D3', 'G3', 'B3', 'E4'].map(parseNote);
+    const at = (note, c = 0) => midiToFreq(parseNote(note)) * 2 ** (c / 1200);
+    const cases = [
+      ['E2 +7 ¢', chooseTarget(at('E2', 7), std), 0, 7],
+      ['D2 (Drop D) against standard', chooseTarget(at('D2'), std), 0, -200],
+      ['E3: E2’s octave harmonic', chooseTarget(at('E3', 3), std), 0, 3],
+      ['F♯3: between D3 and G3, nearer G3', chooseTarget(at('F#3'), std), 3, -100],
+      ['C2: far from any string', chooseTarget(at('C2', -150), std), null, null],
+      ['hysteresis keeps D3 (+270 ¢) over G3 (−230 ¢)', chooseTarget(at('G3', -230), std, 440, 2), 2, 270],
+      ['without hysteresis the nearer G3 wins', chooseTarget(at('G3', -230), std), 3, -230],
+    ];
+    const uke = ['G4', 'C4', 'E4', 'A4'].map(parseNote);
+    cases.push(['re-entrant uke G4', chooseTarget(at('G4', -5), uke), 0, -5]);
+    const bad = cases.filter(([, r, s, c]) => r.string !== s || (c != null && Math.abs(r.cents - c) > 0.5));
+    results.push({
+      name: 'Tuner auto mode: nearest string, far offsets, octave harmonic, hysteresis',
+      pass: bad.length === 0,
+      detail: bad.length ? bad.map(([n, r]) => `${n} → string ${r.string}, ${r.cents.toFixed(1)} ¢`).join('; ') : `${cases.length} cases`,
     });
   }
 

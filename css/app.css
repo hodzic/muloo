@@ -494,3 +494,9 @@ body.practice-full .practice { gap: 6px; }
 .tuner-display.reference .note { color: var(--accent); }
 .tuner-display.reference .needle { opacity: 0.25; }
 .tuner-display.reference .cents-value { color: var(--accent); }
+
+/* Tuner: string-aware auto mode */
+.tune-hint { min-height: 1.4em; font-size: 18px; font-weight: 700; color: var(--accent); }
+.tuner-display.idle .tune-hint { opacity: 0.35; }
+.tuner-display.far .needle line { stroke: var(--warn); }
+.tuner-display.far .needle circle { fill: var(--warn); }

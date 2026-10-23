@@ -1,9 +1,10 @@
 // Tuner tab: standard mode (DESIGN.md §5.1) and beat mode (§5.2, beats-ui.js).
 
-import { yin, rms, median, noteInfo, parseNote, midiToFreq, cents, noteName, noteOctave } from './pitch.js';
+import { yin, rms, median, parseNote, midiToFreq, cents, noteName, noteOctave } from './pitch.js';
 import { INSTRUMENTS, getPreset, defaultPresetKey } from './presets.js';
 import { mountBeats, renderBeats, startBeats, stopBeats } from './beats-ui.js';
 import { pluck, stopTone } from './reference-tone.js';
+import { chooseTarget } from './target.js';
 import { acquireInput, releaseInput, getInput, gainToDb } from '../audio/input.js';
 import { canStartAudio } from '../audio/context.js';
 import { settings } from '../storage/db.js';
@@ -27,6 +28,7 @@ let lastValid = 0;
 let history = [];
 let shownCents = 0;
 let shownMidi = null;
+let shownString = null; // preset string the reading is relative to, or null for a plain note
 let toneString = null; // index of the string whose reference pluck is ringing
 let toneToken = 0;
 
@@ -60,6 +62,7 @@ export function mount(el) {
           <span class="cents-value">— ¢</span>
           <span class="hz-value">— Hz</span>
         </div>
+        <div class="tune-hint" aria-live="polite"></div>
         <div class="level" aria-hidden="true"><div class="level-fill"></div></div>
       </div>
       <div class="mic-message" hidden></div>
@@ -140,6 +143,7 @@ function renderSettings() {
     .map(([k, v]) => `<option value="${k}">${escapeHtml(v.label)}</option>`).join('');
   sel.value = INSTRUMENTS[instrument].presets[preset] ? preset : defaultPresetKey(instrument);
   $('.a4-value', root).textContent = `A4 = ${a4} Hz`;
+  shownString = null; // string indices belong to the previous tuning
   renderStrings();
   renderBeats();
 }
@@ -158,9 +162,9 @@ function renderMode() {
   $('.strings', root).hidden = beats;
 }
 
-function renderStrings(activeMidi = shownMidi) {
+function renderStrings() {
   const strings = presetStrings();
-  const target = toneString ?? nearestString(activeMidi, strings);
+  const target = toneString ?? shownString;
   $('.strings', root).innerHTML = strings.map((m, i) => `
     <button class="btn string${i === target ? ' target' : ''}${i === toneString ? ' playing' : ''}" data-string="${i}"
       aria-pressed="${i === toneString}" aria-label="Play ${noteName(m)}${noteOctave(m)}">${noteName(m)}<sub>${noteOctave(m)}</sub></button>`).join('');
@@ -184,6 +188,7 @@ function setTone(i) {
       $('.hz-value', root).textContent = '— Hz';
       setIdle(true);
       shownMidi = null;
+      shownString = null;
     }
   } else {
     const midi = strings[toneString];
@@ -197,21 +202,12 @@ function setTone(i) {
     $('.note-oct', root).textContent = noteOctave(midi);
     $('.needle', root).style.transform = 'rotate(0deg)';
     $('.cents-value', root).textContent = '♪ reference';
+    $('.tune-hint', root).textContent = '';
     $('.hz-value', root).textContent = `${freq.toFixed(2)} Hz`;
     $('.level-fill', root).style.width = '0%';
   }
   history = [];
   renderStrings();
-}
-
-function nearestString(midi, strings) {
-  if (midi == null) return null;
-  let best = null, bestD = 1.01; // within about a semitone
-  strings.forEach((m, i) => {
-    const d = Math.abs(m - midi);
-    if (d < bestD) { bestD = d; best = i; }
-  });
-  return best;
 }
 
 export async function enter() {
@@ -299,23 +295,29 @@ function loop(now) {
 
 function update(freq) {
   const { a4 } = state();
-  const { midi, cents: c } = noteInfo(freq, a4);
-  if (midi !== shownMidi) {
-    shownMidi = midi;
-    shownCents = c;
-    $('.note-name', root).textContent = noteName(midi);
-    $('.note-oct', root).textContent = noteOctave(midi);
-    renderStrings(midi);
+  // Relative to the nearest string of the tuning, however far off; a plain
+  // note when no string is near (see target.js).
+  const t = chooseTarget(freq, presetStrings(), a4, shownString);
+  if (t.midi !== shownMidi || t.string !== shownString) {
+    shownMidi = t.midi;
+    shownString = t.string;
+    shownCents = t.cents;
+    $('.note-name', root).textContent = noteName(t.midi);
+    $('.note-oct', root).textContent = noteOctave(t.midi);
+    renderStrings();
   } else {
-    shownCents += 0.35 * (c - shownCents);
+    shownCents += 0.35 * (t.cents - shownCents);
   }
   setIdle(false);
   const shown = Math.max(-50, Math.min(50, shownCents));
   $('.needle', root).style.transform = `rotate(${(shown / 50) * 60}deg)`;
-  const off = Math.abs(shownCents) > 50 ? (shownCents > 0 ? ' ▲' : ' ▼') : '';
-  $('.cents-value', root).textContent = `${shownCents >= 0 ? '+' : '−'}${Math.abs(shownCents).toFixed(1)} ¢${off}`;
+  const abs = Math.abs(shownCents);
+  $('.cents-value', root).textContent = `${shownCents >= 0 ? '+' : '−'}${abs.toFixed(abs >= 100 ? 0 : 1)} ¢`;
   $('.hz-value', root).textContent = `${freq.toFixed(2)} Hz`;
-  $('.tuner-display', root).classList.toggle('in-tune', Math.abs(shownCents) <= IN_TUNE_CENTS);
+  const inTune = abs <= IN_TUNE_CENTS;
+  $('.tune-hint', root).textContent = inTune || t.string == null ? '' : shownCents < 0 ? '▲ Tune up' : '▼ Tune down';
+  $('.tuner-display', root).classList.toggle('in-tune', inTune);
+  $('.tuner-display', root).classList.toggle('far', abs > 50);
 }
 
 function setIdle(idle) {
@@ -323,7 +325,8 @@ function setIdle(idle) {
   if (d.classList.contains('idle') === idle) return;
   d.classList.toggle('idle', idle);
   if (idle) {
-    d.classList.remove('in-tune');
+    d.classList.remove('in-tune', 'far');
+    $('.tune-hint', root).textContent = '';
     $('.needle', root).style.transform = 'rotate(0deg)';
   }
 }

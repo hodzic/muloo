@@ -2,8 +2,10 @@
 //
 // It only runs while something needs it: features hold it with holdAudio()
 // and let go with releaseAudio(); shortly after the last one lets go it is
-// suspended. On Android a running AudioContext holds audio focus even when
-// silent, which pauses or ducks other apps (e.g. Spotify).
+// suspended. While anything holds audio or the mic is open, MuLoo also
+// holds audio focus (focus.js), which pauses other apps such as Spotify.
+
+import { takeFocus, dropFocus } from './focus.js';
 
 const SUSPEND_AFTER_MS = 1500;
 
@@ -34,12 +36,19 @@ export async function resume() {
 export function holdAudio(reason) {
   holders.add(reason);
   clearTimeout(suspendTimer);
+  updateFocus();
   return resume();
 }
 
 export function releaseAudio(reason) {
   if (!holders.delete(reason)) return;
+  updateFocus();
   scheduleSuspend();
+}
+
+function updateFocus() {
+  if (holders.size || micOpen) takeFocus();
+  else dropFocus();
 }
 
 function scheduleSuspend() {
@@ -57,6 +66,7 @@ function scheduleSuspend() {
  */
 export function setMicOpen(open) {
   micOpen = open;
+  updateFocus();
   scheduleSuspend();
 }
 

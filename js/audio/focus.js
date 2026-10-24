@@ -7,6 +7,7 @@
 
 const LOOP_SEC = 10;
 const RATE = 8000;
+const SETTLE_MS = 400; // time for other apps to stop after losing focus
 
 let el = null;
 
@@ -25,7 +26,8 @@ function silentWav() {
   return new Blob([buf], { type: 'audio/wav' });
 }
 
-export function takeFocus() {
+/** Resolves once other apps have had time to stop (at once if focus is already held). */
+export async function takeFocus() {
   if (!el) {
     el = new Audio(URL.createObjectURL(silentWav()));
     el.loop = true;
@@ -33,7 +35,13 @@ export function takeFocus() {
       navigator.mediaSession.metadata = new MediaMetadata({ title: 'MuLoo', artist: 'Practising' });
     }
   }
-  if (el.paused) el.play().catch(() => { /* no gesture yet: other apps keep playing */ });
+  if (!el.paused) return;
+  try {
+    await el.play();
+  } catch {
+    return; // no gesture yet: other apps keep playing
+  }
+  await new Promise((r) => setTimeout(r, SETTLE_MS));
 }
 
 export function dropFocus() {

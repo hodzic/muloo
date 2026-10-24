@@ -73,6 +73,7 @@ async function autoDeviceId() {
 }
 
 async function open() {
+  await setMicOpen(true);
   const chosen = settings.get('inputDeviceId', '');
   let stream;
   try {
@@ -94,6 +95,7 @@ async function open() {
     }
   } catch (e) {
     stream?.getTracks().forEach((t) => t.stop());
+    if (!current) setMicOpen(false);
     throw e;
   }
   const track = stream.getAudioTracks()[0];
@@ -123,10 +125,10 @@ async function open() {
     }
   } catch (e) {
     closeInput(input);
+    if (!current) setMicOpen(false);
     throw e;
   }
   for (const node of audioNodes) await connectNode(input, node);
-  setMicOpen(true);
   return input;
 }
 

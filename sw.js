@@ -1,7 +1,7 @@
 // Service worker: cache-first, versioned (DESIGN.md §8).
 // Bump CACHE whenever a shell file changes so clients get the update toast.
 
-const CACHE = 'gp-v18';
+const CACHE = 'gp-v19';
 const INBOX = 'muloo-inbox';
 
 const SHELL = [
@@ -116,6 +116,8 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (req.method !== 'GET') return;
+  // Test pages always come from the network.
+  if (url.pathname.includes('/test/')) return;
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     const hit = await cache.match(req, { ignoreSearch: req.mode === 'navigate' });

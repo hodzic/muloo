@@ -54,7 +54,7 @@ export function mount(el) {
       <div class="beats-panel" hidden></div>
       <div class="tuner-display idle">
         <div class="note"><span class="note-name">–</span><span class="note-oct"></span></div>
-        <svg class="gauge" viewBox="-110 -110 220 125" aria-hidden="true">
+        <svg class="gauge" viewBox="-110 -110 220 118" aria-hidden="true">
           <path class="gauge-arc" d="M -95.3 -55 A 110 110 0 0 1 95.3 -55" />
           ${[-50, -40, -30, -20, -10, 0, 10, 20, 30, 40, 50].map((c) => {
             const a = (c / 50) * 60 * Math.PI / 180, r1 = c % 50 === 0 || c === 0 ? 82 : 90;

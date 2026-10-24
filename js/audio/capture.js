@@ -1,5 +1,5 @@
-// Raw PCM capture node (recorder/capture-worklet.js), shared by the recorder
-// and the tuner's beat mode.
+// Raw PCM capture node (recorder/capture-worklet.js), used by the recorder
+// and by input.js where MediaStreamTrackProcessor is missing.
 
 let ready = null;
 

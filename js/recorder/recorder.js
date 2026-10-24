@@ -3,7 +3,7 @@
 // Chunks are written while recording, so a crash loses at most the last second.
 
 import { getContext } from '../audio/context.js';
-import { acquireInput, releaseInput, onInputChange } from '../audio/input.js';
+import { acquireInput, releaseInput, connectInput, disconnectInput } from '../audio/input.js';
 import { createCaptureNode } from '../audio/capture.js';
 import { metronome } from '../metronome/scheduler.js';
 import { floatToInt16 } from '../util/wav.js';
@@ -32,14 +32,6 @@ const pad = (n) => String(n).padStart(2, '0');
 export const defaultName = (d) =>
   `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
-// Keep recording through a mic device switch.
-onInputChange((input) => {
-  if (session && input && input !== session.input) {
-    session.input = input;
-    input.gain.connect(session.node);
-  }
-});
-
 addEventListener('beforeunload', (e) => {
   if (session) e.preventDefault();
 });
@@ -56,10 +48,11 @@ addEventListener('beforeunload', (e) => {
 export async function startRecording({ countInBars = 0, startMetronome = null, score = null } = {}) {
   if (session) return session;
   const input = await acquireInput('recorder');
+  let node = null;
   try {
     const ctx = getContext();
-    const node = await createCaptureNode(ctx);
-    input.gain.connect(node);
+    node = await createCaptureNode(ctx);
+    await connectInput(node); // stays connected through a mic device switch
 
     const now = new Date();
     const rec = {
@@ -110,6 +103,7 @@ export async function startRecording({ countInBars = 0, startMetronome = null, s
     return s;
   } catch (e) {
     session = null;
+    if (node) disconnectInput(node);
     releaseInput('recorder');
     throw e;
   }
@@ -179,7 +173,7 @@ export function stopRecording() {
       setTimeout(resolve, 1000);
     });
     s.onStopped = null;
-    try { s.input.gain.disconnect(s.node); } catch { /* input already closed */ }
+    disconnectInput(s.node);
     s.node.port.onmessage = null;
     if (s.accN) writeChunk(s, s.acc.slice(0, s.accN));
     await s.writes;

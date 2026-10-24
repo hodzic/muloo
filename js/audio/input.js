@@ -1,8 +1,16 @@
 // Mic input: getUserMedia, device picker, software input gain, level meter.
 // Several features can hold the input at once; the mic is released when the
 // last one lets go.
+//
+// The mic is read straight off its track (MediaStreamTrackProcessor), not
+// through Web Audio: on Android, feeding the mic into a running AudioContext
+// makes other apps' playback crackle (e.g. Spotify while tuning). Only the
+// recorder, which must stay sample-locked to the metronome, connects it to
+// Web Audio (connectInput). Browsers without the processor fall back to Web
+// Audio for everything.
 
 import { getContext, holdAudio, releaseAudio } from './context.js';
+import { createCaptureNode } from './capture.js';
 import { settings } from '../storage/db.js';
 
 export const GAIN_MAX_DB = 24;
@@ -12,10 +20,14 @@ export const gainToDb = (g) => 20 * Math.log10(Math.max(g, 1e-9));
 
 export const looksBluetooth = (label) => /bluetooth|\bbt\b|airpods|buds|hands-?free|headset|sco\b/i.test(label || '');
 
+const RING = 16384; // latest samples kept for input.latest()
+
 let current = null;
 let opening = null;
 const users = new Set();
 const listeners = new Set();
+const dataFns = new Set();
+const audioNodes = new Set(); // Web Audio nodes the mic feeds (connectInput)
 
 /** Called with the new input (or null) whenever it opens, closes or changes device. */
 export function onInputChange(fn) {
@@ -24,8 +36,18 @@ export function onInputChange(fn) {
 }
 const notify = () => listeners.forEach((fn) => fn(current));
 
+/**
+ * The open input, or null: { label, deviceId, sampleRate, latest(buf) }.
+ * latest(buf) fills `buf` with the most recent samples (gain applied).
+ */
 export function getInput() {
   return current;
+}
+
+/** Called with (Float32Array, sampleRate) for every block of mic samples, across device switches. */
+export function onInputData(fn) {
+  dataFns.add(fn);
+  return () => dataFns.delete(fn);
 }
 
 export async function listInputs() {
@@ -51,7 +73,6 @@ async function autoDeviceId() {
 }
 
 async function open() {
-  const ctx = await holdAudio('input');
   const chosen = settings.get('inputDeviceId', '');
   let stream;
   try {
@@ -73,27 +94,142 @@ async function open() {
     }
   } catch (e) {
     stream?.getTracks().forEach((t) => t.stop());
-    if (!current) releaseAudio('input');
     throw e;
   }
-  const source = ctx.createMediaStreamSource(stream);
-  const gain = ctx.createGain();
-  gain.gain.value = dbToGain(settings.get('inputGainDb', 0));
-  const analyser = ctx.createAnalyser();
-  analyser.fftSize = 4096;
-  analyser.smoothingTimeConstant = 0;
-  source.connect(gain).connect(analyser);
   const track = stream.getAudioTracks()[0];
-  return { stream, source, gain, analyser, label: track?.label ?? '', deviceId: track?.getSettings().deviceId ?? '', sampleRate: ctx.sampleRate };
+  const input = {
+    stream,
+    track,
+    label: track?.label ?? '',
+    deviceId: track?.getSettings().deviceId ?? '',
+    sampleRate: track?.getSettings().sampleRate || 48000,
+    gain: dbToGain(settings.get('inputGainDb', 0)),
+    ring: new Float32Array(RING),
+    pos: 0,
+    graph: null, // { source, gain, tap } while Web Audio uses the mic
+    stopReading: null,
+    latest: (buf) => latest(input, buf),
+  };
+  try {
+    if (typeof MediaStreamTrackProcessor !== 'undefined') {
+      readTrack(input);
+    } else {
+      // Fallback: tap the samples out of Web Audio.
+      const graph = await openGraph(input);
+      graph.tap = await createCaptureNode(graph.source.context);
+      graph.tap.port.onmessage = (e) => { if (e.data.type === 'chunk') push(input, e.data.data, graph.source.context.sampleRate); };
+      graph.tap.port.postMessage('start');
+      graph.gain.connect(graph.tap);
+    }
+  } catch (e) {
+    closeInput(input);
+    throw e;
+  }
+  for (const node of audioNodes) await connectNode(input, node);
+  return input;
+}
+
+async function readTrack(input) {
+  const reader = new MediaStreamTrackProcessor({ track: input.track }).readable.getReader();
+  input.stopReading = () => reader.cancel().catch(() => {});
+  for (;;) {
+    let r;
+    try {
+      r = await reader.read();
+    } catch {
+      break;
+    }
+    if (r.done) break;
+    const frame = r.value;
+    const data = new Float32Array(frame.numberOfFrames);
+    input.sampleRate = frame.sampleRate;
+    try {
+      frame.copyTo(data, { planeIndex: 0, format: 'f32-planar' });
+    } catch (e) {
+      console.warn(e);
+      continue;
+    } finally {
+      frame.close();
+    }
+    const g = input.gain;
+    if (g !== 1) for (let i = 0; i < data.length; i++) data[i] *= g;
+    push(input, data, input.sampleRate);
+  }
+}
+
+function push(input, data, sampleRate) {
+  if (input !== current && current) return;
+  const { ring } = input;
+  let { pos } = input;
+  for (let i = 0; i < data.length; i++) {
+    ring[pos] = data[i];
+    pos = (pos + 1) & (RING - 1);
+  }
+  input.pos = pos;
+  dataFns.forEach((fn) => fn(data, sampleRate));
+}
+
+function latest(input, buf) {
+  const n = Math.min(buf.length, RING);
+  const start = (input.pos - n + RING) & (RING - 1);
+  const first = Math.min(n, RING - start);
+  buf.set(input.ring.subarray(start, start + first));
+  if (first < n) buf.set(input.ring.subarray(0, n - first), first);
+}
+
+async function openGraph(input) {
+  if (input.graph) return input.graph;
+  const ctx = await holdAudio('input');
+  const source = ctx.createMediaStreamSource(input.stream);
+  const gain = ctx.createGain();
+  gain.gain.value = input.gain;
+  source.connect(gain);
+  input.graph = { source, gain, tap: null };
+  return input.graph;
+}
+
+function closeGraph(input) {
+  const g = input.graph;
+  if (!g) return;
+  input.graph = null;
+  if (g.tap) { g.tap.port.postMessage('stop'); g.tap.port.onmessage = null; }
+  g.source.disconnect();
+  g.gain.disconnect();
+  releaseAudio('input');
+}
+
+async function connectNode(input, node) {
+  const g = await openGraph(input);
+  if (input.graph === g) g.gain.connect(node);
+}
+
+/**
+ * Feed the mic into a Web Audio node (the recorder's capture node). Stays
+ * connected across device switches until disconnectInput().
+ */
+export async function connectInput(node) {
+  audioNodes.add(node);
+  if (current) await connectNode(current, node);
+}
+
+export function disconnectInput(node) {
+  if (!audioNodes.delete(node)) return;
+  const g = current?.graph;
+  if (!g) return;
+  try { g.gain.disconnect(node); } catch { /* not connected */ }
+  if (!audioNodes.size && !g.tap) closeGraph(current);
+}
+
+function closeInput(input) {
+  input.stopReading?.();
+  closeGraph(input);
+  input.stream.getTracks().forEach((t) => t.stop());
 }
 
 function close() {
   if (!current) return;
-  current.stream.getTracks().forEach((t) => t.stop());
-  current.source.disconnect();
-  current.gain.disconnect();
+  closeInput(current);
   current = null;
-  releaseAudio('input');
 }
 
 /** Open (or share) the mic. Rejects with the getUserMedia error, e.g. NotAllowedError. */
@@ -131,7 +267,9 @@ export function releaseInput(user) {
 
 export function setInputGainDb(db) {
   settings.set('inputGainDb', db);
-  if (current) current.gain.gain.setTargetAtTime(dbToGain(db), getContext().currentTime, 0.02);
+  if (!current) return;
+  current.gain = dbToGain(db);
+  current.graph?.gain.gain.setTargetAtTime(current.gain, getContext().currentTime, 0.02);
 }
 
 // A USB mic plugged in (or unplugged) while the mic is on: switch to it when
@@ -150,9 +288,10 @@ export async function setInputDevice(deviceId) {
   notify();
 }
 
-/** Peak and RMS of the analyser's current window, in dBFS. */
-export function readLevel(analyser, buf = new Float32Array(analyser.fftSize)) {
-  analyser.getFloatTimeDomainData(buf);
+/** Peak and RMS of the latest `buf.length` samples of an input or AnalyserNode, in dBFS. */
+export function readLevel(source, buf) {
+  if (source.getFloatTimeDomainData) source.getFloatTimeDomainData(buf);
+  else source.latest(buf);
   let peak = 0, sum = 0;
   for (let i = 0; i < buf.length; i++) {
     const a = Math.abs(buf[i]);

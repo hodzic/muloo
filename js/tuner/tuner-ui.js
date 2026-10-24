@@ -303,9 +303,9 @@ function loop(now) {
   lastAnalysis = now;
   const input = getInput();
   if (!input) return;
-  const { analyser, sampleRate } = input;
-  if (!buf || buf.length !== analyser.fftSize) buf = new Float32Array(analyser.fftSize);
-  analyser.getFloatTimeDomainData(buf);
+  buf ??= new Float32Array(4096);
+  input.latest(buf);
+  const { sampleRate } = input;
 
   const level = rms(buf);
   $('.level-fill', root).style.width = `${Math.max(0, Math.min(100, (gainToDb(level) + 60) * (100 / 60)))}%`;

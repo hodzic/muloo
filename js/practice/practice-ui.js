@@ -5,7 +5,7 @@
 import { metronome } from '../metronome/scheduler.js';
 import { createMetronomeBar, createMiniMetronome } from '../metronome/metronome-ui.js';
 import { mountScorePanel, enterScorePanel, leaveScorePanel, hasScore, startFollow, scoreLink, useScore } from './practice-score.js';
-import { acquireInput, releaseInput, getInput, readLevel, setInputGainDb, looksBluetooth, onInputChange, GAIN_MAX_DB } from '../audio/input.js';
+import { acquireInput, releaseInput, getInput, readLevel, looksBluetooth, onInputChange } from '../audio/input.js';
 import { startRecording, stopRecording, isRecording, elapsedSec, onRecorderChange, MAX_SECONDS } from '../recorder/recorder.js';
 import { settings, isQuotaError } from '../storage/db.js';
 import { $, escapeHtml, toast, navigate } from '../util/dom.js';
@@ -46,11 +46,7 @@ export function mount(el) {
         <p class="hint">Pick a score above to have it scroll along with the metronome.</p>
       </div>
       <div class="input-row">
-        <button class="btn mic-btn" aria-label="Input device"><span class="mic-label">Mic</span></button>
         <button class="btn level-check" aria-pressed="false" title="Turn the mic on to see the input level before recording">Check level</button>
-        <label class="gain">Gain <output class="gain-out"></output>
-          <input class="gain-slider" type="range" min="0" max="${GAIN_MAX_DB}" step="1" aria-label="Input gain">
-        </label>
       </div>
       <p class="warn bt-warning" hidden>Bluetooth mic: Android switches to low-quality call audio. Use the phone or a USB mic.</p>
       <div class="metro-slot"></div>
@@ -70,11 +66,6 @@ export function mount(el) {
 
   $('.count-in-select', el).value = settings.get('recorder.countIn', 1);
   $('.count-in-select', el).addEventListener('change', (e) => settings.set('recorder.countIn', +e.target.value));
-  $('.gain-slider', el).addEventListener('input', (e) => {
-    setInputGainDb(+e.target.value);
-    renderGain();
-  });
-  $('.mic-btn', el).addEventListener('click', () => $('#settings-btn').click());
   $('.level-check', el).addEventListener('click', () => (checkingLevel ? closeMic() : openMic()));
   $('.record', el).addEventListener('click', toggleRecording);
 
@@ -108,7 +99,6 @@ export function enter({ scoreId } = {}) {
   active = true;
   if (scoreId) useScore(scoreId);
   else enterScorePanel();
-  renderGain();
   // The mic stays off until you record or check the level: opening it takes
   // audio focus on Android and interrupts other apps' playback.
   cancelAnimationFrame(raf);
@@ -164,15 +154,7 @@ function showMicMessage(text, action) {
   m.hidden = false;
 }
 
-function renderGain() {
-  const g = settings.get('inputGainDb', 0);
-  $('.gain-slider', root).value = g;
-  $('.gain-out', root).textContent = `+${g} dB`;
-}
-
 function renderInput(input) {
-  const label = input?.label || 'Mic';
-  $('.mic-label', root).textContent = label.replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)$/i, '');
   $('.bt-warning', root).hidden = !looksBluetooth(input?.label);
 }
 

@@ -291,7 +291,6 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .meter.clipping .meter-clip { background: var(--bad); color: #fff; }
 .stage .mic-message { background: var(--surface-2); }
 .input-row { display: flex; gap: 8px; align-items: center; }
-.mic-btn { max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .gain { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
 .gain output { min-width: 48px; font-variant-numeric: tabular-nums; color: var(--text); }
 .practice > .warn { margin: 0; font-size: 14px; }
@@ -505,7 +504,6 @@ body.practice-full .practice { gap: 6px; }
 .meter.off { opacity: 0.35; }
 .level-check { flex: none; padding: 0 12px; font-weight: 500; }
 .level-check.selected { background: var(--bad); border-color: var(--bad); color: #fff; }
-.mic-btn { max-width: 34%; }
 
 /* Tuner: listen on/off */
 .tuner-top { display: flex; gap: 8px; }

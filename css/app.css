@@ -199,7 +199,7 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .note { font-size: 88px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
 .note-oct { font-size: 36px; color: var(--muted); margin-left: 4px; }
 .in-tune .note { color: var(--good); }
-.gauge { width: min(100%, 340px); overflow: visible; }
+.gauge { width: min(100%, 340px, 36dvh); overflow: visible; }
 .gauge-arc { fill: none; stroke: var(--border); stroke-width: 2; }
 .gauge .tick { stroke: var(--muted); stroke-width: 2; }
 .gauge .tick.zero { stroke: var(--text); stroke-width: 3; }
@@ -270,6 +270,11 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 @keyframes flash { from { background: var(--text); } to { background: var(--surface); } }
 @keyframes flash-accent { from { background: var(--accent); } to { background: var(--surface); } }
 .btn.record { min-height: 64px; font-size: 20px; color: var(--bad); }
+
+@media (orientation: portrait) and (max-height: 700px) {
+  .note { font-size: 64px; }
+  .gauge { width: min(100%, 30dvh); }
+}
 
 @media (orientation: landscape) and (max-height: 500px) {
   .note { font-size: 56px; }

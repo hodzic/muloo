@@ -2,18 +2,22 @@
 //
 // On Android, Web Audio and the mic don't take audio focus, so Spotify keeps
 // playing, and it crackles when the mic is open while MuLoo makes sound.
-// Chrome does take focus for an <audio> element playing something longer
-// than a few seconds, so a silent loop plays while MuLoo needs audio.
+// Chrome does take focus for an <audio> element playing audible sound for
+// longer than a few seconds, so a loop plays while MuLoo needs audio. Chrome
+// counts anything under about -72 dBFS as silence and ignores it, so the
+// loop is a 25 Hz tone at -50 dBFS: "audible" to Chrome, but below what
+// phone speakers reproduce and far too quiet to hear on headphones.
 
 const LOOP_SEC = 10;
 const RATE = 8000;
-const SETTLE_MS = 400; // time for other apps to stop after losing focus
+const TONE_HZ = 25; // whole cycles per loop, so it loops without a click
+const LEVEL = 10 ** (-50 / 20);
+const SETTLE_MS = 600; // time for other apps to stop after losing focus
 
 let el = null;
 
-// 16-bit mono WAV of near-silence (±1 LSB: some browsers treat pure
-// digital silence as "not audible").
-function silentWav() {
+// 16-bit mono WAV of the focus tone.
+function focusWav() {
   const n = LOOP_SEC * RATE;
   const buf = new ArrayBuffer(44 + n * 2);
   const v = new DataView(buf);
@@ -22,14 +26,14 @@ function silentWav() {
   str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
   v.setUint32(24, RATE, true); v.setUint32(28, RATE * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
   str(36, 'data'); v.setUint32(40, n * 2, true);
-  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, i & 1 ? 1 : -1, true);
+  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.round(32767 * LEVEL * Math.sin((2 * Math.PI * TONE_HZ * i) / RATE)), true);
   return new Blob([buf], { type: 'audio/wav' });
 }
 
 /** Resolves once other apps have had time to stop (at once if focus is already held). */
 export async function takeFocus() {
   if (!el) {
-    el = new Audio(URL.createObjectURL(silentWav()));
+    el = new Audio(URL.createObjectURL(focusWav()));
     el.loop = true;
     if ('mediaSession' in navigator && window.MediaMetadata) {
       navigator.mediaSession.metadata = new MediaMetadata({ title: 'MuLoo', artist: 'Practising' });

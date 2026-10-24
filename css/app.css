@@ -410,14 +410,14 @@ dialog input[type="text"] { min-height: var(--tap); padding: 0 12px; border-radi
 .pairs { display: flex; gap: 6px; flex-wrap: wrap; }
 .pairs .pair { flex: 1; padding: 0 8px; }
 .beat-instruction { margin: 0; text-align: center; color: var(--muted); font-size: 15px; min-height: 2.8em; }
-.beat-display { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 16px; border-radius: 20px; background: var(--surface); transition: background 0.2s; }
+.beat-display { flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 16px; border-radius: 20px; background: var(--surface); transition: background 0.2s; }
 .beat-display.green { background: color-mix(in srgb, var(--good) 18%, var(--surface)); }
 .beat-display.idle .beat-rate, .beat-display.idle .beat-sub { opacity: 0.4; }
 .beat-tags { display: flex; gap: 6px; min-height: 18px; }
 .beat-tags .tag:empty { display: none; }
 .tag.regime { color: var(--muted); }
-.beat-circle { width: min(46vw, 200px); aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, #fff 0%, var(--accent) 55%, transparent 72%); opacity: 0.25; }
-.beat-display.green .beat-circle { background: radial-gradient(circle, #fff 0%, var(--good) 55%, transparent 72%); }
+.beat-circle { width: min(18vw, 12dvh, 80px); aspect-ratio: 1; border-radius: 50%; background: var(--accent); opacity: 0.25; }
+.beat-display.green .beat-circle { background: var(--good); }
 .beat-rate { font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .beat-display.green .beat-rate { color: var(--good); }
 .beat-sub { font-size: 15px; font-variant-numeric: tabular-nums; }

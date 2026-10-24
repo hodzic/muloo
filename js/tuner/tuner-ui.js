@@ -29,6 +29,7 @@ let history = [];
 let shownCents = 0;
 let shownMidi = null;
 let shownString = null; // preset string the reading is relative to, or null for a plain note
+let micPaused = false; // mic closed while a reference string rings
 let toneString = null; // index of the string whose reference pluck is ringing
 let toneToken = 0;
 let listening = false; // mic open and analysing
@@ -196,6 +197,7 @@ function setTone(i) {
   const d = $('.tuner-display', root);
   if (toneString == null) {
     stopTone();
+    resumeMic();
     if (d.classList.contains('reference')) {
       d.classList.remove('reference');
       $('.cents-value', root).textContent = '— ¢';
@@ -207,6 +209,7 @@ function setTone(i) {
   } else {
     const midi = strings[toneString];
     const freq = midiToFreq(midi, state().a4);
+    pauseMic();
     // When it dies away, go back to listening (unless another tap took over).
     pluck(freq, { onEnd: () => { if (token === toneToken) setTone(null); } });
     d.classList.remove('idle', 'in-tune');
@@ -222,6 +225,26 @@ function setTone(i) {
   }
   history = [];
   renderStrings();
+}
+
+// The mic closes while a reference string rings: on Android, sound playing
+// next to an open mic makes other apps' playback crackle.
+function pauseMic() {
+  if (listening && !micPaused) {
+    micPaused = true;
+    releaseInput('tuner');
+  }
+}
+
+async function resumeMic() {
+  if (!micPaused) return;
+  micPaused = false;
+  if (!listening || !active) return;
+  try {
+    await acquireInput('tuner');
+  } catch {
+    stopListening();
+  }
 }
 
 export async function enter() {
@@ -241,6 +264,7 @@ export function leave() {
 /** Release the mic (and with it audio focus) and stop analysing. */
 function stopListening() {
   listening = false;
+  micPaused = false;
   cancelAnimationFrame(raf);
   stopBeats();
   releaseInput('tuner');
@@ -261,6 +285,7 @@ function renderListen() {
 
 async function start() {
   hideMessage();
+  if (toneString != null) setTone(null); // see pauseMic()
   try {
     await acquireInput('tuner');
   } catch (e) {

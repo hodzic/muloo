@@ -9,7 +9,7 @@
 // Web Audio (connectInput). Browsers without the processor fall back to Web
 // Audio for everything.
 
-import { getContext, holdAudio, releaseAudio } from './context.js';
+import { getContext, holdAudio, releaseAudio, setMicOpen } from './context.js';
 import { createCaptureNode } from './capture.js';
 import { settings } from '../storage/db.js';
 
@@ -126,6 +126,7 @@ async function open() {
     throw e;
   }
   for (const node of audioNodes) await connectNode(input, node);
+  setMicOpen(true);
   return input;
 }
 
@@ -230,6 +231,7 @@ function close() {
   if (!current) return;
   closeInput(current);
   current = null;
+  setMicOpen(false);
 }
 
 /** Open (or share) the mic. Rejects with the getUserMedia error, e.g. NotAllowedError. */

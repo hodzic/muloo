@@ -49,10 +49,9 @@ export function mount(el) {
           <button class="btn" data-tuner-mode="standard" role="radio">Standard</button>
           <button class="btn" data-tuner-mode="beats" role="radio">Beats</button>
         </div>
-        <button class="btn listen-btn" aria-pressed="false"></button>
       </div>
       <div class="beats-panel" hidden></div>
-      <div class="tuner-display idle">
+      <div class="tuner-display listen-toggle idle" role="button" tabindex="0" aria-pressed="false">
         <div class="note"><span class="note-name">–</span><span class="note-oct"></span></div>
         <svg class="gauge" viewBox="-110 -110 220 118" aria-hidden="true">
           <path class="gauge-arc" d="M -95.3 -55 A 110 110 0 0 1 95.3 -55" />
@@ -69,6 +68,7 @@ export function mount(el) {
         </div>
         <div class="tune-hint" aria-live="polite"></div>
         <div class="level" aria-hidden="true"><div class="level-fill"></div></div>
+        <div class="tap-hint">Tap to listen</div>
       </div>
       <div class="mic-message" hidden></div>
       <div class="strings" role="group" aria-label="Target string"></div>
@@ -88,14 +88,19 @@ export function mount(el) {
     </div>`;
 
   mountBeats($('.beats-panel', el));
-  $('.listen-btn', el).addEventListener('click', () => {
-    if (listening) {
-      settings.set('tuner.listen', false);
-      stopListening();
-    } else {
-      settings.set('tuner.listen', true);
-      start();
-    }
+  // The whole display (gauge, or the beat display in Beats mode) toggles the mic.
+  const beatDisplay = $('.beat-display', el);
+  beatDisplay.classList.add('listen-toggle');
+  beatDisplay.setAttribute('role', 'button');
+  beatDisplay.setAttribute('tabindex', '0');
+  beatDisplay.insertAdjacentHTML('beforeend', '<div class="tap-hint">Tap to listen</div>');
+  $$('.listen-toggle', el).forEach((t) => {
+    t.addEventListener('click', toggleListen);
+    t.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      toggleListen();
+    });
   });
   renderListen();
   $$('[data-tuner-mode]', el).forEach((b) => b.addEventListener('click', () => {
@@ -275,12 +280,22 @@ function stopListening() {
   renderListen();
 }
 
+function toggleListen() {
+  if (listening) {
+    settings.set('tuner.listen', false);
+    stopListening();
+  } else {
+    settings.set('tuner.listen', true);
+    start();
+  }
+}
+
 function renderListen() {
-  const b = $('.listen-btn', root);
-  b.classList.toggle('on', listening);
-  b.setAttribute('aria-pressed', listening);
-  b.setAttribute('aria-label', listening ? 'Stop listening' : 'Start listening');
-  b.textContent = listening ? '● Mic on' : 'Mic off';
+  root.querySelector('.tuner').classList.toggle('listening', listening);
+  $$('.listen-toggle', root).forEach((t) => {
+    t.setAttribute('aria-pressed', listening);
+    t.setAttribute('aria-label', listening ? 'Tuner on. Tap to stop listening' : 'Tuner off. Tap to listen');
+  });
 }
 
 async function start() {

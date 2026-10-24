@@ -14,7 +14,7 @@ const MIN_SEC = 1.5;
 const ANALYZE_MS = 250;
 const RMS_GATE = 10 ** (-50 / 20);
 const GREEN_HZ = 0.3;
-const MAX_PULSE_HZ = 8;
+const MAX_PULSE_HZ = 4;
 
 let root;
 let ring = null;
@@ -245,9 +245,10 @@ function pulse(now) {
   raf = requestAnimationFrame(pulse);
   const c = $('.beat-circle', root);
   if (!reading || reading.green) {
-    c.style.opacity = reading ? 1 : 0.25;
+    c.style.opacity = reading ? 0.7 : 0.25;
     return;
   }
+  // A gentle swell rather than a flash: easier on the eyes.
   const hz = Math.min(reading.rate, MAX_PULSE_HZ);
-  c.style.opacity = (0.2 + 0.8 * (0.5 + 0.5 * Math.cos((2 * Math.PI * hz * now) / 1000))).toFixed(3);
+  c.style.opacity = (0.25 + 0.4 * (0.5 + 0.5 * Math.cos((2 * Math.PI * hz * now) / 1000))).toFixed(3);
 }

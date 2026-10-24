@@ -15,13 +15,22 @@
   button.on { background: var(--on); border-color: var(--on); color: #fff; }
   button small { display: block; opacity: 0.75; }
   pre { white-space: pre-wrap; font-size: 13px; color: var(--muted); }
+  button:disabled { opacity: 0.4; }
+  .ask { border: 1px solid var(--on); border-radius: 10px; padding: 12px; margin: 0 0 16px; }
+  .ask p { color: inherit; margin: 0 0 10px; }
+  .row { display: flex; gap: 8px; }
+  .row button { text-align: center; margin: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 0 0 16px; font-size: 14px; }
+  td, th { border-bottom: 1px solid var(--line); padding: 6px 4px; text-align: left; }
 </style>
 </head>
 <body>
 <h1>Mic static test</h1>
-<p>Play Spotify, then turn on one test at a time and note which ones make it crackle, and where Spotify plays (phone speaker or your usual output). Turn each off before the next. Tests 7–11 click like a metronome.</p>
+<p>Play Spotify and tap a test. Listen, then tap it again to stop: the page reloads and asks how it went. Wait until Spotify sounds clean before the next test. Tests 7–11 click like a metronome.</p>
+<div id="ask" class="ask" hidden></div>
+<table id="results" hidden><thead><tr><th>Test</th><th>Crackle</th><th>Speaker</th></tr></thead><tbody></tbody></table>
 <div id="tests"></div>
-<button id="stop">Stop all</button>
+<button id="clear">Clear results</button>
 <pre id="log"></pre>
 <script type="module">
 const RAW = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
@@ -158,30 +167,71 @@ const tests = [
   },
 ];
 
+// Results survive the reload after each test (this browser only).
+const KEY = 'mic-test-results';
+const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } };
+const results = load(KEY, {});
+
+function renderResults() {
+  const rows = tests.map((t) => [t.name, results[t.name]]).filter(([, r]) => r);
+  const table = document.getElementById('results');
+  table.hidden = !rows.length;
+  table.querySelector('tbody').innerHTML = rows.map(([n, r]) =>
+    `<tr><td>${n}</td><td>${r.crackle ?? '?'}</td><td>${r.speaker ?? '?'}</td></tr>`).join('');
+}
+
+// After a test stops: ask about it.
+const last = load(KEY + ':last', null);
+if (last) {
+  const ask = document.getElementById('ask');
+  ask.hidden = false;
+  const r = (results[last] ??= {});
+  const render = () => {
+    ask.innerHTML = `<p><b>${last}</b> stopped. How did Spotify sound?</p>
+      <div class="row"><button data-k="crackle" data-v="crackled">Crackled</button><button data-k="crackle" data-v="clean">Clean</button></div>
+      <p style="margin-top:10px">Where did Spotify play?</p>
+      <div class="row"><button data-k="speaker" data-v="usual">Usual output</button><button data-k="speaker" data-v="phone speaker">Phone speaker</button></div>
+      <p style="margin-top:10px">Wait until Spotify sounds clean again before the next test.</p>`;
+    ask.querySelectorAll('[data-k]').forEach((b) => {
+      b.classList.toggle('on', r[b.dataset.k] === b.dataset.v);
+      b.onclick = () => { r[b.dataset.k] = b.dataset.v; save(KEY, results); render(); renderResults(); };
+    });
+  };
+  render();
+}
+renderResults();
+
 const box = document.getElementById('tests');
 for (const t of tests) {
   const b = document.createElement('button');
   b.innerHTML = `${t.name}<small>${t.note}</small>`;
   b.onclick = async () => {
-    const wasOn = b.classList.contains('on');
-    stopAll();
-    if (wasOn) return;
+    if (b.classList.contains('on')) {
+      // Stop, then reload so the next test starts from a clean page.
+      stopCurrent?.();
+      save(KEY + ':last', t.name);
+      setTimeout(() => location.reload(), 300);
+      return;
+    }
+    document.getElementById('ask').hidden = true;
+    document.querySelectorAll('#tests button').forEach((x) => { x.disabled = x !== b; });
     try {
       stopCurrent = await t.start();
       b.classList.add('on');
+      b.querySelector('small').textContent = 'Running: tap to stop';
     } catch (e) {
       log(`${t.name}: ${e.name}: ${e.message}`);
+      document.querySelectorAll('#tests button').forEach((x) => { x.disabled = false; });
     }
   };
   box.append(b);
 }
 
-function stopAll() {
-  stopCurrent?.();
-  stopCurrent = null;
-  document.querySelectorAll('#tests button').forEach((b) => b.classList.remove('on'));
-}
-document.getElementById('stop').onclick = () => { stopAll(); log(''); };
+document.getElementById('clear').onclick = () => {
+  try { localStorage.removeItem(KEY); localStorage.removeItem(KEY + ':last'); } catch { /* private mode */ }
+  location.reload();
+};
 </script>
 </body>
 </html>

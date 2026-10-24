@@ -47,8 +47,9 @@ export function releaseAudio(reason) {
 }
 
 function updateFocus() {
-  if (holders.size || micOpen) takeFocus();
-  else dropFocus();
+  if (holders.size || micOpen) return takeFocus();
+  dropFocus();
+  return Promise.resolve();
 }
 
 function scheduleSuspend() {
@@ -60,14 +61,16 @@ function scheduleSuspend() {
 }
 
 /**
- * input.js reports when the mic opens and closes. While it is open, audio
+ * input.js reports when the mic opens (before getUserMedia, awaiting the
+ * returned promise: Chrome won't take audio focus once the mic is in use,
+ * so other apps must stop first) and closes. While it is open, audio
  * suspends as soon as nothing holds it: on Android, a running AudioContext
  * next to an open mic makes other apps' playback crackle.
  */
 export function setMicOpen(open) {
   micOpen = open;
-  updateFocus();
   scheduleSuspend();
+  return updateFocus();
 }
 
 /** True once the page has had a gesture, so audio and the mic can start without one. */

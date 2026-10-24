@@ -16,6 +16,9 @@ import { saveRecording, putChunk, deleteRecording } from '../storage/recordings.
 import { holdWakeLock, releaseWakeLock } from '../util/wakelock.js';
 
 export const MAX_SECONDS = 15 * 60;
+// A take starts this long before the first beat after the count-in, so a
+// note played a little early isn't clipped.
+const LEAD_IN_SEC = 0.2;
 
 let session = null;
 const listeners = new Set();
@@ -42,8 +45,8 @@ addEventListener('beforeunload', (e) => {
 });
 
 /**
- * Start recording. Capture begins immediately, so a count-in is part of the
- * take. If the metronome is running it restarts in sync with the count-in and
+ * Start recording. The take starts just before the first beat after the
+ * count-in (LEAD_IN_SEC); the count-in itself is left out. If the metronome is running it restarts in sync with the count-in and
  * keeps clicking; otherwise it only clicks the count-in.
  * `startMetronome(countInBars)`, if given, starts the clicks instead (score
  * auto-scroll) and returns the first beat's AudioContext time. `score`
@@ -54,7 +57,9 @@ export async function startRecording({ countInBars = 0, startMetronome = null, s
   if (session) return session;
   const input = await acquireInput('recorder');
   const clicking = metronome.running;
-  const direct = !startMetronome && !clicking && countInBars === 0 && typeof MediaStreamTrackProcessor !== 'undefined';
+  // Straight off the mic unless clicks go on during the take (they need the
+  // worklet to stay in time); a count-in alone only decides where it starts.
+  const direct = !startMetronome && !clicking && typeof MediaStreamTrackProcessor !== 'undefined';
   let node = null;
   try {
     const sampleRate = direct ? input.sampleRate : getContext().sampleRate;
@@ -88,6 +93,8 @@ export async function startRecording({ countInBars = 0, startMetronome = null, s
       writes: Promise.resolve(),
       error: null,
       firstBeatTime: null,
+      skip: 0, // samples still to drop before the take starts (count-in)
+      cutAt: null, // direct: performance.now() time the take starts
       ownsMetronome: false,
       startTime: null,
       bars: [],
@@ -100,7 +107,7 @@ export async function startRecording({ countInBars = 0, startMetronome = null, s
         if (!s.samples) s.rec.sampleRate = rate; // the track's real rate
         // A mic with another rate (device switch): keep what we have.
         if (rate !== s.rec.sampleRate) stopRecording();
-        else append(s, data);
+        else append(s, s.cutAt == null ? data : afterCut(s, data, rate));
       });
     } else {
       node.port.onmessage = (e) => onWorkletMessage(s, e.data);
@@ -116,6 +123,14 @@ export async function startRecording({ countInBars = 0, startMetronome = null, s
       s.ownsMetronome = !clicking;
       Object.assign(rec, { tempo: metronome.bpm, timeSig: metronome.timeSig });
     }
+    if (direct && s.firstBeatTime != null) {
+      // No shared clock with the mic here: map the first beat to
+      // performance.now(), close enough with no clicks in the take.
+      const ctx = getContext();
+      const inSec = s.firstBeatTime - ctx.currentTime + (ctx.outputLatency || 0) - LEAD_IN_SEC;
+      s.cutAt = performance.now() + inSec * 1000;
+      rec.firstBeatSec = LEAD_IN_SEC;
+    }
     holdWakeLock('recorder');
     emit();
     return s;
@@ -129,14 +144,36 @@ export async function startRecording({ countInBars = 0, startMetronome = null, s
 
 function onWorkletMessage(s, msg) {
   if (msg.type === 'started') {
-    const startTime = msg.frame / s.rec.sampleRate;
+    let startTime = msg.frame / s.rec.sampleRate;
+    if (s.firstBeatTime != null) {
+      // Leave the count-in out of the take.
+      s.skip = Math.max(0, Math.round((s.firstBeatTime - LEAD_IN_SEC - startTime) * s.rec.sampleRate));
+      startTime += s.skip / s.rec.sampleRate;
+      s.rec.firstBeatSec = Math.max(0, s.firstBeatTime - startTime);
+    }
     s.startTime = startTime;
-    if (s.firstBeatTime != null) s.rec.firstBeatSec = Math.max(0, s.firstBeatTime - startTime);
   } else if (msg.type === 'chunk') {
-    append(s, msg.data);
+    let data = msg.data;
+    if (s.skip) {
+      const n = Math.min(s.skip, data.length);
+      s.skip -= n;
+      data = data.subarray(n);
+    }
+    if (data.length) append(s, data);
   } else if (msg.type === 'stopped') {
     s.onStopped?.();
   }
+}
+
+/** Direct takes: the part of a just-arrived block at or after s.cutAt. */
+function afterCut(s, data, rate) {
+  const blockStart = performance.now() - (data.length / rate) * 1000;
+  const drop = Math.round(((s.cutAt - blockStart) / 1000) * rate);
+  if (drop <= 0) {
+    s.cutAt = null;
+    return data;
+  }
+  return data.subarray(Math.min(drop, data.length));
 }
 
 function append(s, f32) {

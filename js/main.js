@@ -10,6 +10,7 @@ import { recoverInterrupted } from './storage/recordings.js';
 import * as pitch from './tuner/pitch.js';
 import * as wav from './util/wav.js';
 import { metronome } from './metronome/scheduler.js';
+import { onInputChange } from './audio/input.js';
 import { $, $$, toast } from './util/dom.js';
 
 const VIEWS = {
@@ -65,9 +66,20 @@ function registerServiceWorker() {
   }).catch((e) => console.warn('Service worker registration failed', e));
 }
 
+// Other apps' playback (e.g. Spotify) can crackle while the mic is open and
+// MuLoo plays sound, and a web page can't pause them: say so, once a session.
+function micHint() {
+  const off = onInputChange((input) => {
+    if (!input) return;
+    off();
+    toast('Pause other music apps: they may crackle while MuLoo’s mic is on.', { timeout: 6000 });
+  });
+}
+
 async function init() {
   await settings.load();
   initSettings($('#settings-btn'), $('#settings-dialog'));
+  micHint();
 
   for (const [key, view] of Object.entries(VIEWS)) view.module.mount($(`#view-${key}`));
   $$('.tabbar [data-tab]').forEach((b) => b.addEventListener('click', () => show(b.dataset.tab)));

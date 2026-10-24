@@ -57,6 +57,10 @@ function registerServiceWorker() {
   });
   navigator.serviceWorker.register('sw.js').then((reg) => {
     if (reg.waiting && navigator.serviceWorker.controller) offerUpdate(reg.waiting);
+    // An installed app can stay open for days: check again on coming back.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') reg.update().catch(() => {});
+    });
     reg.addEventListener('updatefound', () => {
       const w = reg.installing;
       w?.addEventListener('statechange', () => {

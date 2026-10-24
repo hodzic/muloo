@@ -4,7 +4,7 @@ import { listInputs, setInputDevice, setInputGainDb, looksBluetooth, getInput, o
 import { settings } from './storage/db.js';
 import { $, escapeHtml, formatBytes } from './util/dom.js';
 
-export const APP_VERSION = 'gp-v24';
+export const APP_VERSION = 'gp-v25';
 
 let dialog;
 
@@ -24,6 +24,8 @@ export function initSettings(button, dlg) {
       <h3>Storage</h3>
       <p class="storage muted">…</p>
       <p class="muted">MuLoo ${APP_VERSION} · all data stays on this device.</p>
+      <p class="muted update-status"></p>
+      <button class="btn wide update-btn" type="button" hidden>Update now</button>
       <button class="btn primary wide" value="close">Done</button>
     </form>`;
 
@@ -47,6 +49,7 @@ export function initSettings(button, dlg) {
     $('.gain-out', dialog).textContent = `+${g} dB`;
     renderDevices();
     renderStorage();
+    checkUpdate();
     dialog.showModal();
   });
 }
@@ -63,6 +66,36 @@ async function renderDevices() {
   sel.value = devices.some((d) => d.deviceId === chosen) ? chosen : '';
   const label = getInput()?.label ?? devices.find((d) => d.deviceId === chosen)?.label ?? '';
   $('.bt-warning', dialog).hidden = !looksBluetooth(label);
+}
+
+// Updates normally show as a toast; this is the reliable way to get one.
+async function checkUpdate() {
+  const status = $('.update-status', dialog);
+  const btn = $('.update-btn', dialog);
+  btn.hidden = true;
+  const reg = await navigator.serviceWorker?.getRegistration();
+  if (!reg) { status.textContent = ''; return; }
+  const offer = (w) => {
+    status.textContent = 'A new version is ready.';
+    btn.hidden = false;
+    btn.onclick = () => { btn.disabled = true; w.postMessage({ type: 'SKIP_WAITING' }); };
+  };
+  if (reg.waiting) return offer(reg.waiting);
+  status.textContent = 'Checking for updates…';
+  try {
+    await reg.update();
+  } catch {
+    status.textContent = 'Couldn’t check for updates (offline?).';
+    return;
+  }
+  const w = reg.installing ?? reg.waiting;
+  if (!w) { status.textContent = 'Up to date.'; return; }
+  if (w.state === 'installed') return offer(w);
+  status.textContent = 'Downloading update…';
+  w.addEventListener('statechange', () => {
+    if (w.state === 'installed') offer(w);
+    else if (w.state === 'redundant') status.textContent = 'Update failed. Try again later.';
+  });
 }
 
 async function renderStorage() {

@@ -55,10 +55,7 @@ export async function listInputs() {
   return (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput');
 }
 
-// Asking for 48 kHz matters on some Android phones: at the rate Chrome picks
-// by default, the mic next to running Web Audio makes other apps' playback
-// crackle (test/mic.html, test 11 vs 8).
-const RAW = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1, sampleRate: 48000 };
+const RAW = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
 
 const getStream = (deviceId) =>
   navigator.mediaDevices.getUserMedia({ audio: deviceId ? { ...RAW, deviceId: { exact: deviceId } } : RAW });

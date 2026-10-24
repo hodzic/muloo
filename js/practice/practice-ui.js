@@ -231,8 +231,8 @@ function loop(now) {
     $('.meter-peak', root).style.left = '0%';
     return;
   }
-  if (!levelBuf || levelBuf.length !== input.analyser.fftSize) levelBuf = new Float32Array(input.analyser.fftSize);
-  const { peakDb, clipped } = readLevel(input.analyser, levelBuf);
+  levelBuf ??= new Float32Array(2048);
+  const { peakDb, clipped } = readLevel(input, levelBuf);
   if (peakDb >= peakHold || now - peakHoldAt > 1500) {
     peakHold = peakDb;
     peakHoldAt = now;

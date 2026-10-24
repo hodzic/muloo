@@ -4,9 +4,7 @@
 import { stringPairs, beatTarget } from './beats.js';
 import { rms, median } from './pitch.js';
 import { getPreset } from './presets.js';
-import { getContext } from '../audio/context.js';
-import { getInput, onInputChange } from '../audio/input.js';
-import { createCaptureNode } from '../audio/capture.js';
+import { getInput, onInputData } from '../audio/input.js';
 import { settings } from '../storage/db.js';
 import { $, $$, escapeHtml } from '../util/dom.js';
 
@@ -19,9 +17,8 @@ const GREEN_HZ = 0.3;
 const MAX_PULSE_HZ = 8;
 
 let root;
-let node = null;
-let connectedInput = null;
 let ring = null;
+let ringRate = 0;
 let writePos = 0;
 let filled = 0;
 let timer = 0;
@@ -131,22 +128,8 @@ export async function startBeats() {
   running = true;
   resetReading();
   renderBeats();
-  const ctx = getContext();
-  ring = new Float32Array(Math.round(WINDOW_SEC * ctx.sampleRate));
-  writePos = filled = 0;
-  try {
-    node = await createCaptureNode(ctx);
-  } catch (e) {
-    console.error(e);
-    running = false;
-    $('.beat-hint', root).textContent = 'Beat mode needs AudioWorklet, which this browser lacks.';
-    return;
-  }
-  if (!running) { node = null; return; }
-  node.port.onmessage = (e) => { if (e.data.type === 'chunk') write(e.data.data); };
-  node.port.postMessage('start');
-  connect(getInput());
-  unsubscribeInput = onInputChange(connect);
+  ring = null;
+  unsubscribeInput = onInputData(write);
   timer = setInterval(analyze, ANALYZE_MS);
   raf = requestAnimationFrame(pulse);
 }
@@ -158,21 +141,16 @@ export function stopBeats() {
   clearInterval(timer);
   cancelAnimationFrame(raf);
   unsubscribeInput?.();
-  if (node) {
-    node.port.postMessage('stop');
-    node.port.onmessage = null;
-    connect(null);
-    node = null;
+  unsubscribeInput = null;
+}
+
+function write(data, sampleRate) {
+  if (!ring || ringRate !== sampleRate) {
+    // First block, or a mic with another rate: start over.
+    ring = new Float32Array(Math.round(WINDOW_SEC * sampleRate));
+    ringRate = sampleRate;
+    writePos = filled = 0;
   }
-}
-
-function connect(input) {
-  if (connectedInput && node) { try { connectedInput.gain.disconnect(node); } catch { /* closed */ } }
-  connectedInput = input && node ? input : null;
-  connectedInput?.gain.connect(node);
-}
-
-function write(data) {
   for (let i = 0; i < data.length; i++) {
     ring[writePos] = data[i];
     writePos = (writePos + 1) % ring.length;
@@ -205,8 +183,8 @@ function lastOnset(buf, sr) {
 
 function analyze() {
   const { pair, target } = current();
-  if (!pair || !getInput()) return;
-  const sr = getContext().sampleRate;
+  if (!pair || !getInput() || !ring) return;
+  const sr = ringRate;
   const all = last(ring.length);
   const recentLen = Math.min(all.length, sr);
   const recent = all.subarray(all.length - recentLen);

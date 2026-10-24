@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mic Static Test</title>
+<style>
+  :root { color-scheme: light dark; --bg: #fff; --text: #111; --muted: #666; --line: #ccc; --on: #d33; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #111; --text: #eee; --muted: #999; --line: #444; } }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--text); font: 16px/1.4 system-ui, sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  p { color: var(--muted); margin: 0 0 16px; }
+  button { display: block; width: 100%; margin: 0 0 10px; padding: 14px; font: inherit; text-align: left;
+    border: 1px solid var(--line); border-radius: 10px; background: transparent; color: inherit; }
+  button.on { background: var(--on); border-color: var(--on); color: #fff; }
+  button small { display: block; opacity: 0.75; }
+  pre { white-space: pre-wrap; font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>Mic static test</h1>
+<p>Play Spotify, then turn on one test at a time and note which ones make it crackle. Turn each off before the next.</p>
+<div id="tests"></div>
+<button id="stop">Stop all</button>
+<pre id="log"></pre>
+<script type="module">
+const RAW = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
+const log = (s) => { document.getElementById('log').textContent = s; };
+const describe = (stream, ctx) => {
+  const t = stream?.getAudioTracks()[0];
+  const s = t?.getSettings() ?? {};
+  return [t && `mic: ${t.label}`, t && `settings: ${JSON.stringify(s)}`, ctx && `context: ${ctx.sampleRate} Hz, ${ctx.state}`]
+    .filter(Boolean).join('\n');
+};
+
+let stopCurrent = null;
+
+const tests = [
+  {
+    name: '1. Mic only, raw', note: 'No audio processing, no Web Audio',
+    async start() {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: RAW });
+      log(describe(stream));
+      return () => stream.getTracks().forEach((t) => t.stop());
+    },
+  },
+  {
+    name: '2. Mic only, browser defaults', note: 'Echo cancelling etc. on',
+    async start() {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      log(describe(stream));
+      return () => stream.getTracks().forEach((t) => t.stop());
+    },
+  },
+  {
+    name: '3. Web Audio only, no mic', note: 'A running, silent AudioContext',
+    async start() {
+      const ctx = new AudioContext({ latencyHint: 'interactive' });
+      await ctx.resume();
+      log(describe(null, ctx));
+      return () => ctx.close();
+    },
+  },
+  {
+    name: '4. Mic raw + Web Audio', note: 'What MuLoo does now',
+    async start() {
+      const ctx = new AudioContext({ latencyHint: 'interactive' });
+      await ctx.resume();
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: RAW });
+      const an = ctx.createAnalyser();
+      ctx.createMediaStreamSource(stream).connect(an);
+      log(describe(stream, ctx));
+      return () => { stream.getTracks().forEach((t) => t.stop()); ctx.close(); };
+    },
+  },
+  {
+    name: '5. Mic raw + Web Audio at mic rate', note: 'AudioContext at the mic’s sample rate',
+    async start() {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: RAW });
+      const rate = stream.getAudioTracks()[0].getSettings().sampleRate;
+      const ctx = new AudioContext(rate ? { sampleRate: rate } : {});
+      await ctx.resume();
+      const an = ctx.createAnalyser();
+      ctx.createMediaStreamSource(stream).connect(an);
+      log(describe(stream, ctx));
+      return () => { stream.getTracks().forEach((t) => t.stop()); ctx.close(); };
+    },
+  },
+  {
+    name: '6. Mic raw, read without Web Audio', note: 'MediaStreamTrackProcessor (newer Chrome only)',
+    async start() {
+      if (typeof MediaStreamTrackProcessor === 'undefined') throw new Error('Not supported in this browser');
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: RAW });
+      const reader = new MediaStreamTrackProcessor({ track: stream.getAudioTracks()[0] }).readable.getReader();
+      let frames = 0, running = true;
+      (async () => {
+        while (running) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          frames++;
+          value.close();
+        }
+      })();
+      const timer = setInterval(() => log(`${describe(stream)}\nframes read: ${frames}`), 500);
+      return () => { running = false; clearInterval(timer); reader.cancel().catch(() => {}); stream.getTracks().forEach((t) => t.stop()); };
+    },
+  },
+];
+
+const box = document.getElementById('tests');
+for (const t of tests) {
+  const b = document.createElement('button');
+  b.innerHTML = `${t.name}<small>${t.note}</small>`;
+  b.onclick = async () => {
+    const wasOn = b.classList.contains('on');
+    stopAll();
+    if (wasOn) return;
+    try {
+      stopCurrent = await t.start();
+      b.classList.add('on');
+    } catch (e) {
+      log(`${t.name}: ${e.name}: ${e.message}`);
+    }
+  };
+  box.append(b);
+}
+
+function stopAll() {
+  stopCurrent?.();
+  stopCurrent = null;
+  document.querySelectorAll('#tests button').forEach((b) => b.classList.remove('on'));
+}
+document.getElementById('stop').onclick = () => { stopAll(); log(''); };
+</script>
+</body>
+</html>

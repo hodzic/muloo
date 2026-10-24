@@ -33,25 +33,48 @@ export async function listInputs() {
   return (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput');
 }
 
+const RAW = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
+
+const getStream = (deviceId) =>
+  navigator.mediaDevices.getUserMedia({ audio: deviceId ? { ...RAW, deviceId: { exact: deviceId } } : RAW });
+
+const looksUsb = (label) => /usb/i.test(label || '');
+
+/**
+ * The mic to use when none is chosen in Settings: a USB mic if one is plugged
+ * in, otherwise anything but Bluetooth (a Bluetooth speaker's mic drops it to
+ * call quality). '' when device names aren't known yet.
+ */
+async function autoDeviceId() {
+  const inputs = (await listInputs()).filter((d) => d.deviceId && d.deviceId !== 'default' && d.label);
+  return (inputs.find((d) => looksUsb(d.label)) ?? inputs.find((d) => !looksBluetooth(d.label)))?.deviceId ?? '';
+}
+
 async function open() {
   const ctx = await holdAudio('input');
-  // Raw input by default; voice processing puts Android in call mode, which
-  // some phones handle better than raw input next to music (Settings).
-  const voice = settings.get('micVoice', false);
-  const audio = { echoCancellation: voice, noiseSuppression: voice, autoGainControl: voice, channelCount: 1 };
-  const deviceId = settings.get('inputDeviceId', '');
+  const chosen = settings.get('inputDeviceId', '');
   let stream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: deviceId ? { ...audio, deviceId: { exact: deviceId } } : audio });
-  } catch (e) {
     try {
+      stream = await getStream(chosen || await autoDeviceId());
+    } catch (e) {
       // A remembered USB mic that is unplugged: fall back to the default input.
-      if (!deviceId || (e.name !== 'OverconstrainedError' && e.name !== 'NotFoundError')) throw e;
-      stream = await navigator.mediaDevices.getUserMedia({ audio });
-    } catch (e2) {
-      if (!current) releaseAudio('input');
-      throw e2;
+      if (e.name !== 'OverconstrainedError' && e.name !== 'NotFoundError') throw e;
+      stream = await getStream('');
     }
+    if (!chosen && looksBluetooth(stream.getAudioTracks()[0]?.label)) {
+      // Device names only show up once the mic is allowed, so the first open
+      // can land on a Bluetooth mic. Now that they're known, pick again.
+      const better = await autoDeviceId();
+      if (better) {
+        stream.getTracks().forEach((t) => t.stop());
+        stream = await getStream(better);
+      }
+    }
+  } catch (e) {
+    stream?.getTracks().forEach((t) => t.stop());
+    if (!current) releaseAudio('input');
+    throw e;
   }
   const source = ctx.createMediaStreamSource(stream);
   const gain = ctx.createGain();
@@ -61,7 +84,7 @@ async function open() {
   analyser.smoothingTimeConstant = 0;
   source.connect(gain).connect(analyser);
   const track = stream.getAudioTracks()[0];
-  return { stream, source, gain, analyser, label: track?.label ?? '', sampleRate: ctx.sampleRate };
+  return { stream, source, gain, analyser, label: track?.label ?? '', deviceId: track?.getSettings().deviceId ?? '', sampleRate: ctx.sampleRate };
 }
 
 function close() {
@@ -110,6 +133,14 @@ export function setInputGainDb(db) {
   settings.set('inputGainDb', db);
   if (current) current.gain.gain.setTargetAtTime(dbToGain(db), getContext().currentTime, 0.02);
 }
+
+// A USB mic plugged in (or unplugged) while the mic is on: switch to it when
+// no mic is chosen in Settings.
+navigator.mediaDevices?.addEventListener?.('devicechange', async () => {
+  if (!current || settings.get('inputDeviceId', '')) return;
+  const id = await autoDeviceId();
+  if (id && id !== current.deviceId) setInputDevice('').catch((e) => console.warn(e));
+});
 
 export async function setInputDevice(deviceId) {
   settings.set('inputDeviceId', deviceId);

@@ -19,7 +19,7 @@
 </head>
 <body>
 <h1>Mic static test</h1>
-<p>Play Spotify, then turn on one test at a time and note which ones make it crackle. Turn each off before the next.</p>
+<p>Play Spotify, then turn on one test at a time and note which ones make it crackle, and where Spotify plays (phone speaker or your usual output). Turn each off before the next. Tests 7–11 click like a metronome.</p>
 <div id="tests"></div>
 <button id="stop">Stop all</button>
 <pre id="log"></pre>
@@ -34,6 +34,37 @@ const describe = (stream, ctx) => {
 };
 
 let stopCurrent = null;
+
+// Web Audio playing metronome-like clicks, optionally with a mic connected.
+async function clicksWith(audio) {
+  const ctx = new AudioContext({ latencyHint: 'interactive' });
+  await ctx.resume();
+  let stream = null;
+  if (audio) {
+    stream = await navigator.mediaDevices.getUserMedia({ audio });
+    ctx.createMediaStreamSource(stream).connect(ctx.createAnalyser());
+  }
+  const out = ctx.createGain();
+  out.gain.value = 0.3;
+  out.connect(ctx.destination);
+  let next = ctx.currentTime + 0.1;
+  const tick = () => {
+    while (next < ctx.currentTime + 0.3) {
+      const osc = ctx.createOscillator(), env = ctx.createGain();
+      osc.frequency.value = 1500;
+      env.gain.setValueAtTime(1, next);
+      env.gain.exponentialRampToValueAtTime(0.001, next + 0.05);
+      osc.connect(env).connect(out);
+      osc.start(next);
+      osc.stop(next + 0.06);
+      next += 0.5;
+    }
+  };
+  const timer = setInterval(tick, 50);
+  tick();
+  log(describe(stream, ctx));
+  return () => { clearInterval(timer); stream?.getTracks().forEach((t) => t.stop()); ctx.close(); };
+}
 
 const tests = [
   {
@@ -104,6 +135,26 @@ const tests = [
       const timer = setInterval(() => log(`${describe(stream)}\nframes read: ${frames}`), 500);
       return () => { running = false; clearInterval(timer); reader.cancel().catch(() => {}); stream.getTracks().forEach((t) => t.stop()); };
     },
+  },
+  {
+    name: '7. Clicks only, no mic', note: 'Baseline: Web Audio playing, mic closed',
+    start: () => clicksWith(null),
+  },
+  {
+    name: '8. Raw mic + clicks', note: 'Like recording with the metronome now',
+    start: () => clicksWith(RAW),
+  },
+  {
+    name: '9. Echo cancellation only + clicks', note: 'Noise suppression and auto gain off',
+    start: () => clicksWith({ ...RAW, echoCancellation: true }),
+  },
+  {
+    name: '10. Browser defaults + clicks', note: 'All processing on',
+    start: () => clicksWith(true),
+  },
+  {
+    name: '11. Raw mic at 48 kHz + clicks', note: 'Asks for 48 kHz from the mic',
+    start: () => clicksWith({ ...RAW, sampleRate: 48000 }),
   },
 ];
 

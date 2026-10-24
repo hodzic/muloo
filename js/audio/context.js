@@ -10,6 +10,7 @@ const SUSPEND_AFTER_MS = 1500;
 let ctx = null;
 const holders = new Set();
 let suspendTimer = 0;
+let micOpen = false;
 
 export function getContext() {
   if (!ctx) {
@@ -46,7 +47,17 @@ function scheduleSuspend() {
   if (holders.size) return;
   suspendTimer = setTimeout(() => {
     if (!holders.size && ctx?.state === 'running') ctx.suspend().catch(() => {});
-  }, SUSPEND_AFTER_MS);
+  }, micOpen ? 0 : SUSPEND_AFTER_MS);
+}
+
+/**
+ * input.js reports when the mic opens and closes. While it is open, audio
+ * suspends as soon as nothing holds it: on Android, a running AudioContext
+ * next to an open mic makes other apps' playback crackle.
+ */
+export function setMicOpen(open) {
+  micOpen = open;
+  scheduleSuspend();
 }
 
 /** True once the page has had a gesture, so audio and the mic can start without one. */

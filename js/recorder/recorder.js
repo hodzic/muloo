@@ -1,9 +1,14 @@
 // Single-track recorder (DESIGN.md §5.5).
 // mic → input gain → capture worklet → Int16 chunks (~1 s) in IndexedDB.
 // Chunks are written while recording, so a crash loses at most the last second.
+//
+// With no metronome involved the samples come straight off the mic instead
+// (onInputData) and no AudioContext runs: on Android, Web Audio running next
+// to an open mic makes other apps' playback crackle, e.g. Spotify you play
+// along with. The worklet is only needed to line a take up with the clicks.
 
 import { getContext } from '../audio/context.js';
-import { acquireInput, releaseInput, connectInput, disconnectInput } from '../audio/input.js';
+import { acquireInput, releaseInput, connectInput, disconnectInput, onInputData } from '../audio/input.js';
 import { createCaptureNode } from '../audio/capture.js';
 import { metronome } from '../metronome/scheduler.js';
 import { floatToInt16 } from '../util/wav.js';
@@ -48,18 +53,22 @@ addEventListener('beforeunload', (e) => {
 export async function startRecording({ countInBars = 0, startMetronome = null, score = null } = {}) {
   if (session) return session;
   const input = await acquireInput('recorder');
+  const clicking = metronome.running;
+  const direct = !startMetronome && !clicking && countInBars === 0 && typeof MediaStreamTrackProcessor !== 'undefined';
   let node = null;
   try {
-    const ctx = getContext();
-    node = await createCaptureNode(ctx);
-    await connectInput(node); // stays connected through a mic device switch
+    const sampleRate = direct ? input.sampleRate : getContext().sampleRate;
+    if (!direct) {
+      node = await createCaptureNode(getContext());
+      await connectInput(node); // stays connected through a mic device switch
+    }
 
     const now = new Date();
     const rec = {
       id: crypto.randomUUID(),
       name: defaultName(now),
       createdAt: now.getTime(),
-      sampleRate: ctx.sampleRate,
+      sampleRate,
       lengthSamples: 0,
       status: 'recording',
       ...(score ?? {}),
@@ -70,10 +79,11 @@ export async function startRecording({ countInBars = 0, startMetronome = null, s
       rec,
       node,
       input,
+      unsubscribe: null,
       samples: 0,
       writtenSamples: 0,
       chunkIndex: 0,
-      acc: new Int16Array(ctx.sampleRate),
+      acc: new Int16Array(sampleRate),
       accN: 0,
       writes: Promise.resolve(),
       error: null,
@@ -85,10 +95,18 @@ export async function startRecording({ countInBars = 0, startMetronome = null, s
       onStopped: null,
     };
     session = s;
-    node.port.onmessage = (e) => onWorkletMessage(s, e.data);
-    node.port.postMessage('start');
+    if (direct) {
+      s.unsubscribe = onInputData((data, rate) => {
+        if (!s.samples) s.rec.sampleRate = rate; // the track's real rate
+        // A mic with another rate (device switch): keep what we have.
+        if (rate !== s.rec.sampleRate) stopRecording();
+        else append(s, data);
+      });
+    } else {
+      node.port.onmessage = (e) => onWorkletMessage(s, e.data);
+      node.port.postMessage('start');
+    }
 
-    const clicking = metronome.running;
     if (startMetronome) {
       s.firstBeatTime = startMetronome(countInBars);
       s.ownsMetronome = true;
@@ -167,14 +185,18 @@ export function stopRecording() {
   const s = session;
   if (!s) return Promise.resolve({ rec: null, error: null });
   s.stopping ??= (async () => {
-    await new Promise((resolve) => {
-      s.onStopped = resolve;
-      s.node.port.postMessage('stop');
-      setTimeout(resolve, 1000);
-    });
-    s.onStopped = null;
-    disconnectInput(s.node);
-    s.node.port.onmessage = null;
+    if (s.node) {
+      await new Promise((resolve) => {
+        s.onStopped = resolve;
+        s.node.port.postMessage('stop');
+        setTimeout(resolve, 1000);
+      });
+      s.onStopped = null;
+      disconnectInput(s.node);
+      s.node.port.onmessage = null;
+    } else {
+      s.unsubscribe();
+    }
     if (s.accN) writeChunk(s, s.acc.slice(0, s.accN));
     await s.writes;
     if (s.ownsMetronome) metronome.stop();

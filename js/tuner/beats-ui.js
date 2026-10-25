@@ -65,8 +65,7 @@ export function mountBeats(el) {
     <p class="beat-instruction"></p>
     <div class="beat-display">
       <div class="beat-tags"><span class="tag regime"></span><span class="tag experimental" hidden>experimental</span></div>
-      <div class="beat-circle" aria-hidden="true"></div>
-      <div class="beat-rate">—</div>
+      <div class="beat-main"><div class="beat-circle" aria-hidden="true"></div><div class="beat-rate">—</div></div>
       <div class="beat-sub muted"></div>
       <div class="beat-hint"></div>
     </div>`;

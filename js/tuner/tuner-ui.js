@@ -141,8 +141,16 @@ export function mount(el) {
     const b = e.target.closest('[data-string]');
     if (!b) return;
     const i = +b.dataset.string;
+    if (i === focusString) {
+      // Tapping the picked string again lets go: back to the nearest string.
+      focusString = null;
+      shownString = null;
+      shownMidi = null;
+      setTone(null);
+      return;
+    }
     focusString = i;
-    setTone(i); // every tap plucks, including the string that is ringing
+    setTone(i);
   });
   renderSettings();
 }
@@ -381,16 +389,10 @@ function loop(now) {
 
 /**
  * The reading relative to the tapped string (however far off, see
- * target.js), or to the nearest string when none is tapped. Playing another
- * string close to pitch (within 50 ¢) drops the tapped one.
+ * target.js), or to the nearest string when none is tapped.
  */
 function readingFor(freq, strings, a4) {
-  const auto = chooseTarget(freq, strings, a4, focusString ?? shownString);
-  if (focusString == null || focusString >= strings.length) return auto;
-  if (auto.string != null && auto.string !== focusString && Math.abs(auto.cents) <= 50) {
-    focusString = null;
-    return auto;
-  }
+  if (focusString == null || focusString >= strings.length) return chooseTarget(freq, strings, a4, shownString);
   const t = chooseTarget(freq, [strings[focusString]], a4, 0);
   return t.string == null ? t : { ...t, string: focusString };
 }
@@ -416,7 +418,8 @@ function update(freq) {
   const abs = Math.abs(shownCents);
   $('.cents-value', root).textContent = `${shownCents >= 0 ? '+' : '−'}${abs.toFixed(abs >= 100 ? 0 : 1)} ¢`;
   $('.hz-value', root).textContent = `${freq.toFixed(2)} Hz`;
-  const inTune = abs <= IN_TUNE_CENTS;
+  // A note away from the tapped string is never "in tune", whatever its cents.
+  const inTune = abs <= IN_TUNE_CENTS && (t.string != null || focusString == null);
   $('.tune-hint', root).textContent = t.string == null
     ? (focusString != null ? `Play ${noteName(presetStrings()[focusString])}${noteOctave(presetStrings()[focusString])}` : '')
     : inTune ? '' : shownCents < 0 ? '▲ Tune up' : '▼ Tune down';

@@ -13,16 +13,17 @@ const MIN_VISIBLE_ROW = 0.4;
 // Rows drawn ahead of the playhead, beyond the ones on screen, so a row is
 // ready before it glides in (drawing one can take longer than a beat).
 const PREFETCH_ROWS = 2;
+const SWIPE_PX = 40;
 
 export class FollowView {
   /**
    * container: element to fill. pdf: PDF.js document. flat: flatten(map).
    * indices: playing order (measure indices). Callbacks:
-   *   onTap(measureIndex, playPos, xFraction), onLongPress(). measureIndex is
-   *   null (playPos -1) for a tap between measures.
+   *   onTap(measureIndex, playPos, xFraction), onLongPress(), onSwipe(dx, dy).
+   *   measureIndex is null (playPos -1) for a tap between measures.
    */
-  constructor(container, { pdf, flat, indices, rows = 1, onTap, onLongPress }) {
-    Object.assign(this, { container, pdf, flat, indices, rows, onTap, onLongPress });
+  constructor(container, { pdf, flat, indices, rows = 1, onTap, onLongPress, onSwipe }) {
+    Object.assign(this, { container, pdf, flat, indices, rows, onTap, onLongPress, onSwipe });
     this.strips = new Map(); // `${system}@${height}` → Promise<{ canvas, scale, width }>
     this.slots = []; // [{ system, el }] top to bottom
     this.pos = null;
@@ -288,17 +289,22 @@ export class FollowView {
   bindPointer() {
     let down = null, timer = 0;
     this.root.addEventListener('pointerdown', (e) => {
-      down = { x: e.clientX, y: e.clientY, long: false };
+      if (!e.isPrimary) return;
+      down = { id: e.pointerId, x: e.clientX, y: e.clientY, long: false };
       timer = setTimeout(() => { if (down) { down.long = true; this.onLongPress?.(); } }, LONG_PRESS_MS);
     });
     const cancel = () => { clearTimeout(timer); down = null; };
     this.root.addEventListener('pointercancel', cancel);
+    this.root.addEventListener('pointermove', (e) => {
+      // A drag is not a long press.
+      if (down?.id === e.pointerId && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 10) clearTimeout(timer);
+    });
     this.root.addEventListener('pointerup', (e) => {
       clearTimeout(timer);
-      if (!down || down.long) { down = null; return; }
-      const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y) > 10;
+      if (!down || down.id !== e.pointerId || down.long) { down = null; return; }
+      const dx = e.clientX - down.x, dy = e.clientY - down.y;
       down = null;
-      if (moved) return;
+      if (Math.hypot(dx, dy) > 10) { if (Math.hypot(dx, dy) > SWIPE_PX) this.onSwipe?.(dx, dy); return; }
       const h = this.hit(e.clientX, e.clientY);
       const r = this.root.getBoundingClientRect();
       this.onTap?.(h?.measureIndex ?? null, h?.playPos ?? -1, (e.clientX - r.left) / r.width);

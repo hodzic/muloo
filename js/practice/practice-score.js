@@ -67,6 +67,7 @@ export function mountScorePanel(toolbarEl, stageEl, { onChange } = {}) {
     else { loopMode = true; }
     view?.setLoop(loop);
     renderTools();
+    if (loopMode) setStatus('Loop: tap the first measure · swipe to move');
   });
   $('.ps-ramp-step', root).addEventListener('change', (e) => settings.set('practice.rampStep', Math.max(0, +e.target.value || 0)));
   $('.ps-ramp-target', root).addEventListener('change', (e) => settings.set('practice.rampTarget', +e.target.value || null));
@@ -194,6 +195,7 @@ function makeView() {
   startPos = 0;
   loop = null;
   loopMode = false;
+  pickingLoop = null;
   pausedPos = null;
   view?.destroy();
   ctrl?.destroy();
@@ -204,6 +206,7 @@ function makeView() {
     rows: settings.get('practice.rows', 1),
     onTap,
     onLongPress: pauseOrResume,
+    onSwipe,
   });
   ctrl = new FollowController({
     flat: doc.flat,
@@ -263,7 +266,10 @@ function onTap(measureIndex, playPos, xFraction) {
   if (loopMode) {
     if (pickingLoop == null) {
       pickingLoop = playPos;
-      setStatus(`Loop from m.${doc.flat.measures[measureIndex].n}: now tap the last measure.`);
+      startPos = playPos;
+      view.setLoop({ from: playPos, to: playPos });
+      view.setPosition({ playPos, frac: 0 });
+      setStatus(`Loop from m.${doc.flat.measures[measureIndex].n}: tap the last measure`);
     } else {
       loop = { from: Math.min(pickingLoop, playPos), to: Math.max(pickingLoop, playPos) };
       pickingLoop = null;
@@ -278,6 +284,30 @@ function onTap(measureIndex, playPos, xFraction) {
   startPos = playPos;
   view.setPosition({ playPos, frac: 0 });
   renderStatus();
+}
+
+/**
+ * While stopped, swipes move through the score: up/down to the next or
+ * previous row, left/right by measures (about one per 80 px).
+ */
+function onSwipe(dx, dy) {
+  if (!ctrl || ctrl.running) return;
+  const last = doc.indices.length - 1;
+  const sys = (p) => doc.flat.measures[doc.indices[p]].system;
+  let p = startPos;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    p += (dx < 0 ? 1 : -1) * Math.max(1, Math.round(Math.abs(dx) / 80));
+  } else if (dy < 0) {
+    while (p < last && sys(p) === sys(startPos)) p++;
+  } else {
+    // Back to the start of this row, or of the previous one if already there.
+    if (p > 0 && sys(p - 1) === sys(p)) { while (p > 0 && sys(p - 1) === sys(startPos)) p--; }
+    else if (p > 0) { p--; const k = sys(p); while (p > 0 && sys(p - 1) === k) p--; }
+  }
+  startPos = Math.max(0, Math.min(last, p));
+  pausedPos = null;
+  view.setPosition({ playPos: startPos, frac: 0 });
+  if (!loopMode) renderStatus();
 }
 
 function pauseOrResume() {

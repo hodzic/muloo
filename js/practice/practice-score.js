@@ -46,6 +46,7 @@ export function mountScorePanel(toolbarEl, stageEl, { onChange } = {}) {
       <div class="segmented ps-rows" role="radiogroup" aria-label="Rows">
         <button class="btn" data-rows="1">1 row</button><button class="btn" data-rows="2">2 rows</button>
       </div>
+      <button class="btn icon ps-home" aria-label="Back to the first measure" title="Back to the first measure"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M18 6l-8 6 8 6z"/></svg></button>
       <button class="btn ps-loop" aria-pressed="false">Loop</button>
       <label class="ps-ramp" title="Tempo ramp: BPM added on each pass of the loop">+<input class="ps-ramp-step" type="number" min="0" max="20" step="1" inputmode="numeric" aria-label="BPM added per loop pass"> to <input class="ps-ramp-target" type="number" min="${BPM_MIN}" max="${BPM_MAX}" step="1" inputmode="numeric" aria-label="Target tempo"></label>
       <button class="btn ps-map">Map</button>
@@ -69,6 +70,7 @@ export function mountScorePanel(toolbarEl, stageEl, { onChange } = {}) {
   $('.ps-ramp-target', root).addEventListener('change', (e) => settings.set('practice.rampTarget', +e.target.value || null));
   $('.ps-map', root).addEventListener('click', () => doc && navigate('scores', { scoreId: doc.score.id, editMap: true }));
   $('.ps-full', root).addEventListener('click', () => toggleFullscreen());
+  $('.ps-home', root).addEventListener('click', toStart);
   $('.ps-measures', root).addEventListener('change', (e) => setSubset(e.target.value));
   document.addEventListener('keydown', onKey);
   metronome.onChange(renderStatus);
@@ -289,9 +291,20 @@ function pauseOrResume() {
   }
 }
 
+/** Stop if playing and go back to the first measure (of the loop, if there is one). */
+function toStart() {
+  if (!ctrl) return;
+  ctrl.stop();
+  pausedPos = null;
+  startPos = loop ? loop.from : 0;
+  view.setPosition({ playPos: startPos, frac: 0 });
+  renderStatus();
+}
+
 function onKey(e) {
   if (!active || !doc || !host.offsetParent) return;
   if (e.target.closest?.('input, select, textarea, dialog[open]')) return;
+  if (e.key === 'Home') { e.preventDefault(); toStart(); return; }
   const fwd = ['ArrowRight', 'PageDown'].includes(e.key), back = ['ArrowLeft', 'PageUp'].includes(e.key);
   if (!fwd && !back) return;
   e.preventDefault();

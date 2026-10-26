@@ -4,7 +4,7 @@ import { listInputs, setInputDevice, setInputGainDb, looksBluetooth, getInput, o
 import { settings } from './storage/db.js';
 import { $, escapeHtml, formatBytes } from './util/dom.js';
 
-export const APP_VERSION = 'muloo-v46';
+export const APP_VERSION = 'muloo-v47';
 
 const METER_FLOOR_DB = -60;
 const CLIP_HOLD_MS = 2000;
@@ -39,6 +39,7 @@ export function initSettings(button, dlg) {
       <h3>Storage</h3>
       <p class="storage muted">…</p>
       <p class="muted">MuLoo ${APP_VERSION} · all data stays on this device.</p>
+      <p class="muted">Other apps: <a href="/stiko/">Stiko</a> · <a href="/outback/">Outback</a> · <a href="/photo-splitter/">Panorama Splitter</a> · <a href="/">All apps</a></p>
       <p class="muted update-status"></p>
       <button class="btn wide update-btn" type="button" hidden>Update now</button>
       <button class="btn primary wide" value="close">Done</button>

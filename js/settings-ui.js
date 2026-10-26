@@ -39,7 +39,7 @@ export function initSettings(button, dlg) {
       <h3>Storage</h3>
       <p class="storage muted">…</p>
       <p class="muted">MuLoo ${APP_VERSION} · all data stays on this device.</p>
-      <p class="muted">Other apps: <a href="/stiko/">Stiko</a> · <a href="/outback/">Outback</a> · <a href="/photo-splitter/">Panorama Splitter</a> · <a href="/">All apps</a></p>
+      <p class="muted"><a href="/">All apps</a></p>
       <p class="muted update-status"></p>
       <button class="btn wide update-btn" type="button" hidden>Update now</button>
       <button class="btn primary wide" value="close">Done</button>

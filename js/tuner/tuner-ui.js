@@ -187,9 +187,12 @@ function renderMode() {
 
 function renderStrings() {
   const strings = presetStrings();
-  const target = toneString ?? shownString;
+  // Outlined: the string being heard right now (none while idle or while a
+  // reference rings). Green once it is in tune.
+  const heard = toneString == null && !isIdle() ? shownString : null;
+  const inTune = $('.tuner-display', root).classList.contains('in-tune');
   $('.strings', root).innerHTML = strings.map((m, i) => `
-    <button class="btn string${i === target ? ' target' : ''}${i === toneString ? ' playing' : ''}" data-string="${i}"
+    <button class="btn string${i === heard ? ' heard' : ''}${i === heard && inTune ? ' in-tune' : ''}${i === toneString ? ' playing' : ''}" data-string="${i}"
       aria-pressed="${i === toneString}" aria-label="Play ${noteName(m)}${noteOctave(m)}">${noteName(m)}<sub>${noteOctave(m)}</sub></button>`).join('');
 }
 
@@ -397,15 +400,19 @@ function update(freq) {
   $('.tune-hint', root).textContent = inTune || t.string == null ? '' : shownCents < 0 ? '▲ Tune up' : '▼ Tune down';
   $('.tuner-display', root).classList.toggle('in-tune', inTune);
   $('.tuner-display', root).classList.toggle('far', abs > 50);
+  $('.string.heard', root)?.classList.toggle('in-tune', inTune);
 }
+
+const isIdle = () => $('.tuner-display', root).classList.contains('idle');
 
 function setIdle(idle) {
   const d = $('.tuner-display', root);
-  if (d.classList.contains('idle') === idle) return;
+  if (isIdle() === idle) return;
   d.classList.toggle('idle', idle);
   if (idle) {
     d.classList.remove('in-tune', 'far');
     $('.tune-hint', root).textContent = '';
     $('.needle', root).style.transform = 'rotate(0deg)';
   }
+  renderStrings();
 }

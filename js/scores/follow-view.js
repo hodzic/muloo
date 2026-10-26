@@ -33,11 +33,13 @@ export class FollowView {
       <div class="follow-rows"></div>
       <div class="follow-playhead" hidden></div>
       <div class="follow-cue" hidden></div>
+      <div class="follow-measure" aria-live="off"></div>
       <div class="follow-empty" hidden></div>`;
     container.replaceChildren(this.root);
     this.rowsEl = this.root.querySelector('.follow-rows');
     this.playheadEl = this.root.querySelector('.follow-playhead');
     this.cueEl = this.root.querySelector('.follow-cue');
+    this.measureEl = this.root.querySelector('.follow-measure');
     this.bindPointer();
     this.resizeObs = new ResizeObserver(() => this.layout());
     this.resizeObs.observe(this.root);
@@ -162,6 +164,9 @@ export class FollowView {
     if (!cur?.ready) return;
     const m = this.pos ? this.flat.measures[this.indices[this.pos.playPos]] : this.flat.measures[this.flat.systems[cur.system].first];
     const frac = this.pos?.frac ?? 0;
+    // The current measure number, always on screen while playing.
+    const label = `m.${m.n}`;
+    if (this.measureEl.textContent !== label) this.measureEl.textContent = label;
     const xPts = m.x0 + frac * (m.x1 - m.x0);
     const px = xPts * cur.scale;
     const off = this.offsetFor(cur.width, px);

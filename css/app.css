@@ -29,10 +29,14 @@ html, body {
   overscroll-behavior: none;
 }
 
+/* The page itself never scrolls; only main does, when a tab doesn't fit. 100dvh
+   can come out taller than the screen in an installed Android app (it counts the
+   system navigation bar), which made every tab scroll a little. */
+html, body { overflow: hidden; }
+
 body {
   display: flex;
   flex-direction: column;
-  min-height: 100dvh;
 }
 
 [hidden] { display: none !important; }
@@ -52,6 +56,9 @@ h1, h2, h3 { margin: 0; font-weight: 650; }
 
 main {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   padding: 0 16px calc(var(--tabbar-h) + var(--safe-bottom) + 12px);

@@ -4,7 +4,6 @@
 // Tapping the middle toggles full-screen.
 
 import { listScores, getScore, saveScore, deleteScore, importPdf, openPdf, renderPage, takeSharedFiles } from './scores.js';
-import { createMiniMetronome } from '../metronome/metronome-ui.js';
 import { loadMap, getStoredMap } from './map-store.js';
 import { flatten } from './score-map.js';
 import { openMapEditor, closeMapEditor, isMapEditorOpen, openMapHelp } from './map-editor.js';
@@ -39,7 +38,6 @@ export function mount(el) {
   root = el;
   el.innerHTML = `
     <div class="scores-lib">
-      <div class="mini-slot"></div>
       <label class="btn primary wide add-score">
         <span>+ Add score (PDF)</span>
         <input type="file" accept="application/pdf,.pdf" multiple hidden>
@@ -56,10 +54,8 @@ export function mount(el) {
         <button class="btn icon v-full" aria-label="Full screen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
       </div>
       <div class="page-stage" tabindex="0" aria-label="Score page. Tap left or right to turn."></div>
-      <div class="mini-slot"></div>
     </div>
     <div class="map-editor-host" hidden></div>`;
-  for (const slot of el.querySelectorAll('.mini-slot')) createMiniMetronome(slot);
 
   $('.add-score input', el).addEventListener('change', async (e) => {
     const files = [...e.target.files];

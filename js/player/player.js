@@ -240,8 +240,6 @@ function markup() {
       <div class="out-level" aria-hidden="true"><div class="out-fill"></div></div>
       <div class="times"><span class="pos">0:00.0</span><span class="loop-times"></span><span class="dur"></span></div>
       <div class="loop-row">
-        <button class="btn set-a">Set A</button>
-        <button class="btn set-b">Set B</button>
         <button class="btn loop-toggle" aria-pressed="false">Loop</button>
         <button class="btn icon clear-loop" aria-label="Clear loop">${svg('M6 6l12 12M18 6L6 18')}</button>
       </div>
@@ -278,10 +276,8 @@ function bind() {
   $('.play', root).addEventListener('click', togglePlay);
   $('.back5', root).addEventListener('click', () => seek(audio.currentTime - BACK_SEC));
   $('.to-a', root).addEventListener('click', () => seek(loop.a ?? 0));
-  $('.set-a', root).addEventListener('click', setA);
-  $('.set-b', root).addEventListener('click', setB);
   $('.loop-toggle', root).addEventListener('click', () => {
-    if (loop.a == null || loop.b == null) { toast('Set A and B first.'); return; }
+    if (loop.a == null || loop.b == null) { toast('Drag across the waveform to mark a loop.'); return; }
     loop.on = !loop.on;
     changed();
   });
@@ -320,23 +316,6 @@ function seek(t) {
   audio.currentTime = Math.max(0, Math.min(duration, t));
 }
 
-function setA() {
-  const t = audio.currentTime;
-  loop.a = t;
-  if (loop.b != null && loop.b < t + MIN_LOOP) { loop.b = null; loop.on = false; }
-  changed();
-}
-
-function setB() {
-  const t = audio.currentTime;
-  const a = loop.a ?? 0;
-  if (t < a + MIN_LOOP) { toast('B must be after A.'); return; }
-  loop.a = a;
-  loop.b = t;
-  loop.on = true;
-  changed();
-}
-
 function setSpeed(s) {
   audio.playbackRate = Math.round(Math.max(SPEED_MIN, Math.min(SPEED_MAX, s)) * 20) / 20;
   changed();
@@ -366,7 +345,7 @@ function renderControls() {
   t.disabled = loop.a == null || loop.b == null;
   $('.loop-times', root).textContent = loop.a != null
     ? `A ${fmt(loop.a)}${loop.b != null ? ` – B ${fmt(loop.b)}` : ''}`
-    : '';
+    : 'Drag to loop';
   onPlayState();
 }
 

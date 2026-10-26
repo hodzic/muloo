@@ -4,7 +4,7 @@
 // Tapping the middle toggles full-screen.
 
 import { listScores, getScore, saveScore, deleteScore, importPdf, openPdf, renderPage, takeSharedFiles } from './scores.js';
-import { loadMap, getStoredMap } from './map-store.js';
+import { loadMap, getStoredMap, readEmbeddedMap } from './map-store.js';
 import { flatten } from './score-map.js';
 import { openMapEditor, closeMapEditor, isMapEditorOpen, openMapHelp } from './map-editor.js';
 import { isQuotaError } from '../storage/db.js';
@@ -255,9 +255,9 @@ function closeViewer() {
 
 // First measure number of each row, from the score's map if it has one.
 async function loadRowNumbers() {
-  const s = score;
-  const stored = await getStoredMap(s.pdfHash).catch(() => null);
-  if (s === score) rowNumbers = stored?.map ? flatten(stored.map) : null;
+  const s = score, doc = pdf;
+  const map = (await getStoredMap(s.pdfHash).catch(() => null))?.map ?? await readEmbeddedMap(doc);
+  if (s === score) rowNumbers = map ? flatten(map) : null;
 }
 
 async function rowLabels(n) {
@@ -265,14 +265,23 @@ async function rowLabels(n) {
   if (!systems?.length) return [];
   const pts = (await pdf.getPage(n)).getViewport({ scale: 1 }).width;
   const k = renderWidth / pts;
-  return systems.map((sy) => {
-    const m = rowNumbers.measures[sy.first];
+  const label = (cls, text, left, top) => {
     const el = document.createElement('span');
-    el.className = 'row-num';
-    el.textContent = m.n;
-    el.style.left = `${Math.max(12, m.x0 * k)}px`;
-    el.style.top = `${sy.y0 * k}px`;
+    el.className = cls;
+    el.textContent = text;
+    el.style.left = `${left}px`;
+    el.style.top = `${top}px`;
     return el;
+  };
+  return systems.flatMap((sy) => {
+    const first = rowNumbers.measures[sy.first];
+    const out = [label('row-num', first.n, Math.max(12, first.x0 * k), sy.y0 * k)];
+    // Repeats, segnos, D.S., Coda… at the start or end of their measure, along the row's bottom.
+    for (const m of rowNumbers.measures.slice(sy.first, sy.last + 1)) {
+      if (m.labels.before) out.push(label('score-mark', m.labels.before, m.x0 * k + 2, sy.y1 * k));
+      if (m.labels.after) out.push(label('score-mark end', m.labels.after, m.x1 * k - 2, sy.y1 * k));
+    }
+    return out;
   });
 }
 

@@ -21,6 +21,14 @@ export const measureId = (page, sys, m) => `p${pad2(page)}s${pad2(sys)}m${pad2(m
  * (an override applies from its measure onward); systems[k] = { k, page,
  * y0, y1, first, last } (measure index range).
  */
+/** Marks shown at the start and end of a measure (from the map), e.g. "𝄆 1." and "𝄇 D.S.". */
+export function markLabels(m) {
+  const k = m.marks ?? {};
+  const before = [k.repeatStart && '𝄆', k.segno && '𝄋', k.segno2 && '𝄋2', k.coda && '⊕', k.ending1 && '1.', k.ending2 && '2.', m.timeSig, m.tempo && `♩=${m.tempo}`].filter(Boolean).join(' ');
+  const after = [k.repeatEnd && '𝄇', k.toCoda && 'To ⊕', k.ds && 'D.S.', k.ds2 && 'D.S.2', k.dc && 'D.C.', k.fine && 'Fine'].filter(Boolean).join(' ');
+  return { before, after };
+}
+
 export function flatten(map) {
   const measures = [];
   const systems = [];
@@ -45,6 +53,7 @@ export function flatten(map) {
           timeSig,
           beats: TIME_SIGS[timeSig].beats,
           bpm,
+          labels: markLabels(m),
         });
       });
       systems.push({ k, page: pg.page, y0: sys.y0, y1: sys.y1, first, last: measures.length - 1 });

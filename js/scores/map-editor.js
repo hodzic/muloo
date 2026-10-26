@@ -5,7 +5,7 @@
 
 import { renderPage } from './scores.js';
 import { saveMap, detectMap, pdfWithMap } from './map-store.js';
-import { flatten, parseOrder, formatOrder, orderFromMarkers, renumber, MAP_VERSION } from './score-map.js';
+import { flatten, parseOrder, formatOrder, orderFromMarkers, renumber, markLabels, MAP_VERSION } from './score-map.js';
 import { TIME_SIGS, BPM_MIN, BPM_MAX } from '../metronome/scheduler.js';
 import { shareOrDownload } from '../library/export.js';
 import { $, $$, escapeHtml, toast } from '../util/dom.js';
@@ -23,7 +23,7 @@ const MARKS = [
   ['ds2', 'D.S. 2: back to 𝄋 2'],
   ['dc', 'D.C. (back to start)'],
   ['toCoda', 'To Coda'],
-  ['coda', '𝄌 Coda'],
+  ['coda', '⊕ Coda'],
   ['fine', 'Fine'],
 ];
 const HIT_PX = 14;
@@ -291,8 +291,8 @@ function drawOverlay() {
         const left = m.x0 * scale, w = (m.x1 - m.x0) * scale;
         if (m === currentMeasure) html += `<div class="me-meas" style="left:${left}px;top:${top}px;width:${w}px;height:${h}px"></div>`;
         if (j === 0) html += `<div class="row-num" style="left:${Math.max(12, left)}px;top:${top}px">${m.n}</div>`;
-        if (before) html += `<div class="me-mark" style="left:${left + 2}px;top:${top + h - 2}px">${escapeHtml(before)}</div>`;
-        if (after) html += `<div class="me-mark end" style="left:${left + w - 2}px;top:${top + h - 2}px">${escapeHtml(after)}</div>`;
+        if (before) html += `<div class="score-mark" style="left:${left + 2}px;top:${top + h - 2}px">${escapeHtml(before)}</div>`;
+        if (after) html += `<div class="score-mark end" style="left:${left + w - 2}px;top:${top + h - 2}px">${escapeHtml(after)}</div>`;
       });
       return;
     }
@@ -547,14 +547,6 @@ function renderOrder() {
   $('.me-order-empty', root).hidden = has;
   $('.me-order', root).value = map.order ?? '';
   renderPreview();
-}
-
-/** Marks shown at the start and end of a measure, e.g. "𝄆 ¹" and "𝄇 D.S.". */
-function markLabels(m) {
-  const k = m.marks ?? {};
-  const before = [k.repeatStart && '𝄆', k.segno && '𝄋', k.segno2 && '𝄋2', k.coda && '𝄌', k.ending1 && '1.', k.ending2 && '2.', m.timeSig, m.tempo && `♩=${m.tempo}`].filter(Boolean).join(' ');
-  const after = [k.repeatEnd && '𝄇', k.toCoda && 'To 𝄌', k.ds && 'D.S.', k.ds2 && 'D.S.2', k.dc && 'D.C.', k.fine && 'Fine'].filter(Boolean).join(' ');
-  return { before, after };
 }
 
 function renderPreview() {

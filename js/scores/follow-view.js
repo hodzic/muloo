@@ -220,6 +220,18 @@ export class FollowView {
         num.style.left = `${Math.max(32, first.x0 * scale)}px`;
         slot.inner.append(num);
       }
+      const top = canvas.offsetTop + canvas.offsetHeight;
+      for (const m of this.flat.measures.slice(sys.first, sys.last + 1)) {
+        for (const [text, x, end] of [[m.labels.before, m.x0 * scale + 2, false], [m.labels.after, m.x1 * scale - 2, true]]) {
+          if (!text) continue;
+          const el = document.createElement('span');
+          el.className = `score-mark${end ? ' end' : ''}`;
+          el.textContent = text;
+          el.style.left = `${x}px`;
+          el.style.top = `${top}px`;
+          slot.inner.append(el);
+        }
+      }
       this.drawLoop(slot);
       this.render(false);
     }).catch((e) => console.error('Could not draw row', e));

@@ -17,8 +17,10 @@ const MARKS = [
   ['repeatEnd', '𝄇 Repeat end'],
   ['ending1', '1st ending'],
   ['ending2', '2nd ending'],
-  ['segno', '𝄋 Segno'],
-  ['ds', 'D.S. (back to 𝄋)'],
+  ['segno', '𝄋 Segno (1)'],
+  ['segno2', '𝄋 Segno 2'],
+  ['ds', 'D.S. (1): back to 𝄋'],
+  ['ds2', 'D.S. 2: back to 𝄋 2'],
   ['dc', 'D.C. (back to start)'],
   ['toCoda', 'To Coda'],
   ['coda', '𝄌 Coda'],
@@ -550,8 +552,8 @@ function renderOrder() {
 /** Marks shown at the start and end of a measure, e.g. "𝄆 ¹" and "𝄇 D.S.". */
 function markLabels(m) {
   const k = m.marks ?? {};
-  const before = [k.repeatStart && '𝄆', k.segno && '𝄋', k.coda && '𝄌', k.ending1 && '1.', k.ending2 && '2.', m.timeSig, m.tempo && `♩=${m.tempo}`].filter(Boolean).join(' ');
-  const after = [k.repeatEnd && '𝄇', k.toCoda && 'To 𝄌', k.ds && 'D.S.', k.dc && 'D.C.', k.fine && 'Fine'].filter(Boolean).join(' ');
+  const before = [k.repeatStart && '𝄆', k.segno && '𝄋', k.segno2 && '𝄋2', k.coda && '𝄌', k.ending1 && '1.', k.ending2 && '2.', m.timeSig, m.tempo && `♩=${m.tempo}`].filter(Boolean).join(' ');
+  const after = [k.repeatEnd && '𝄇', k.toCoda && 'To 𝄌', k.ds && 'D.S.', k.ds2 && 'D.S.2', k.dc && 'D.C.', k.fine && 'Fine'].filter(Boolean).join(' ');
   return { before, after };
 }
 

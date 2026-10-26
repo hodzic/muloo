@@ -199,6 +199,17 @@ export function runDspChecks() {
   const dsCoda = orderFromMarkers(nums, { 3: { segno: true }, 5: { toCoda: true }, 6: { ds: true }, 7: { coda: true } });
   const simple = orderFromMarkers([1, 2, 3], { 2: { repeatEnd: true } });
   const dcFine = orderFromMarkers([1, 2, 3, 4], { 2: { fine: true }, 4: { dc: true } });
+  // Two segnos (Another Day in Paradise): intro 1-2 ×2, verse 3-4 ×2 at 𝄋1, chorus 5 at 𝄋2,
+  // interlude 6-7 ×2 with To Coda and D.S. 1 at 7, bridge 8, D.S. 2 al Coda at 9, coda 10.
+  const twoSegnos = orderFromMarkers([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], {
+    1: { repeatStart: true }, 2: { repeatEnd: true }, 3: { repeatStart: true, segno: true }, 4: { repeatEnd: true },
+    5: { segno2: true }, 6: { repeatStart: true }, 7: { repeatEnd: true, ds: true, toCoda: true }, 9: { ds2: true }, 10: { coda: true },
+  });
+  results.push({
+    name: 'Score map: D.S. 1 and D.S. 2 with two segnos',
+    pass: twoSegnos.join() === '1,2,1,2,3,4,3,4,5,6,7,6,7,3,4,5,6,7,8,9,5,6,7,10',
+    detail: formatOrder(twoSegnos),
+  });
   results.push({
     name: 'Score map: order from repeats, endings, D.S. al Coda, D.C. al Fine',
     pass: voltas.join() === '1,2,3,1,2,4,5,6,7,8' && dsCoda.join() === '1,2,3,4,5,6,3,4,5,7,8'

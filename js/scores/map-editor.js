@@ -9,6 +9,7 @@ import { flatten, parseOrder, formatOrder, orderFromMarkers, renumber, MAP_VERSI
 import { TIME_SIGS, BPM_MIN, BPM_MAX } from '../metronome/scheduler.js';
 import { shareOrDownload } from '../library/export.js';
 import { $, $$, escapeHtml, toast } from '../util/dom.js';
+export { openMapHelp } from './map-help.js';
 
 const MODES = { rows: 'Rows', bars: 'Barlines', order: 'Order', details: 'Details' };
 const MARKS = [
@@ -24,6 +25,9 @@ const MARKS = [
   ['fine', 'Fine'],
 ];
 const HIT_PX = 14;
+const ZOOMS = [1, 1.5, 2, 3, 4];
+const MAX_CANVAS_PX = 12e6; // device pixels; bigger canvases fail or eat memory on phones
+const PINCH_STEP = 1.3;
 const MIN_ROW_PTS = 12;
 
 let root = null;
@@ -38,6 +42,9 @@ let dirty = false;
 let orderManual = false;
 let drag = null;
 let current = null; // the row last touched, shown in orange
+let zoom = 1;
+const pointers = new Map(); // pointerId → {x, y} on the overlay
+let pan = null; // two-finger pan/pinch in progress
 let onCloseCb = null;
 let renderToken = 0;
 
@@ -53,12 +60,16 @@ export function openMapEditor(host, { score: s, pdf: p, map: initial, verified }
   mode = 'rows';
   pageNo = map.pages[0]?.page ?? 1;
   current = null;
+  zoom = 1;
   onCloseCb = onClose;
   root.innerHTML = markup(verified);
   bind();
   renderAll();
   addEventListener('resize', onResize);
+  document.dispatchEvent(new Event('helpchange'));
 }
+
+export const isMapEditorOpen = () => !!root;
 
 let resizeTimer = 0;
 function onResize() {
@@ -72,6 +83,9 @@ export function closeMapEditor() {
   root.innerHTML = '';
   root = null;
   onCloseCb = null;
+  pointers.clear();
+  pan = null;
+  document.dispatchEvent(new Event('helpchange'));
 }
 
 const hasMarks = () => map.pages.some((pg) => pg.systems.some((sy) => sy.measures.some((m) => m.marks && Object.keys(m.marks).length)));
@@ -94,8 +108,12 @@ function markup(verified) {
           <button class="btn round me-prev" aria-label="Previous page">‹</button>
           <span class="me-pageno"></span>
           <button class="btn round me-next" aria-label="Next page">›</button>
+          <span class="me-gap"></span>
+          <button class="btn round me-zoom-out" aria-label="Zoom out">−</button>
+          <span class="me-zoom"></span>
+          <button class="btn round me-zoom-in" aria-label="Zoom in">+</button>
         </div>
-        <div class="me-page"><div class="me-canvas"></div><div class="me-overlay"></div></div>
+        <div class="me-scroll"><div class="me-page"><div class="me-canvas"></div><div class="me-overlay"></div></div></div>
       </div>
       <div class="me-order-panel" hidden>
         <div class="me-chips" aria-label="Measures"></div>
@@ -128,11 +146,18 @@ function bind() {
   $$('[data-mode]', root).forEach((b) => b.addEventListener('click', () => { mode = b.dataset.mode; renderAll(); }));
   $('.me-prev', root).addEventListener('click', () => gotoPage(pageNo - 1));
   $('.me-next', root).addEventListener('click', () => gotoPage(pageNo + 1));
+  $('.me-zoom-out', root).addEventListener('click', () => stepZoom(-1));
+  $('.me-zoom-in', root).addEventListener('click', () => stepZoom(1));
   const ov = $('.me-overlay', root);
   ov.addEventListener('pointerdown', onDown);
   ov.addEventListener('pointermove', onMove);
   ov.addEventListener('pointerup', onUp);
-  ov.addEventListener('pointercancel', () => { drag = null; });
+  ov.addEventListener('pointercancel', (e) => {
+    pointers.delete(e.pointerId);
+    if (!pointers.size) pan = null;
+    if (drag) clearTimeout(drag.timer);
+    drag = null;
+  });
   $('.me-chips', root).addEventListener('click', onChip);
   $('.me-order', root).addEventListener('input', (e) => {
     orderManual = e.target.value.trim() !== '';
@@ -152,9 +177,9 @@ function bind() {
 }
 
 const HELP = {
-  rows: 'Each band is a row of music. Drag its top or bottom edge. Tap inside a band to split it, tap between two bands to merge them, tap empty space to add one. Long-press a band to delete it.',
-  bars: 'Tap inside a row to add a barline, tap a barline to remove it, drag one to move it.',
-  order: 'Tap a measure to mark repeats, endings, D.S. and Coda, or a change of time signature or tempo. The playing order follows; you can also type it.',
+  rows: 'Drag a band’s edge to fit the row. Tap to split, merge or add; long-press to delete. More under ?',
+  bars: 'Tap a row to add a barline, tap one to remove it, drag to move it. More under ?',
+  order: 'Tap a measure to mark repeats, endings, D.S. and Coda, or type the order. More under ?',
   details: '',
 };
 
@@ -196,8 +221,18 @@ function gotoPage(n) {
   renderPage_();
 }
 
-async function renderPage_() {
+function stepZoom(d) {
+  const i = ZOOMS.indexOf(zoom) + d;
+  if (i < 0 || i >= ZOOMS.length) return;
+  zoom = ZOOMS[i];
+  renderPage_({ keepCenter: true });
+}
+
+async function renderPage_({ keepCenter = false } = {}) {
   const token = ++renderToken;
+  $('.me-zoom', root).textContent = zoom === 1 ? 'Fit' : `${zoom}×`;
+  $('.me-zoom-out', root).disabled = zoom === ZOOMS[0];
+  $('.me-zoom-in', root).disabled = zoom === ZOOMS.at(-1);
   $('.me-pageno', root).textContent = `Page ${pageNo} / ${pdf.numPages}`;
   $('.me-prev', root).disabled = pageNo <= 1;
   $('.me-next', root).disabled = pageNo >= pdf.numPages;
@@ -206,19 +241,32 @@ async function renderPage_() {
   const vp = page.getViewport({ scale: 1 });
   if (token !== renderToken || !root) return;
   pageSize = { w: vp.width, h: vp.height };
-  // Fit the whole page between here and the tab bar, so every row can be marked.
+  // At Fit the whole page sits between here and the tab bar, so every row can
+  // be marked; zoomed, it scrolls inside that box.
+  const sc = $('.me-scroll', root);
   const box = $('.me-page', root);
-  box.style.width = '';
-  const full = box.clientWidth;
+  const center = keepCenter && sc.scrollWidth
+    ? { x: (sc.scrollLeft + sc.clientWidth / 2) / sc.scrollWidth, y: (sc.scrollTop + sc.clientHeight / 2) / sc.scrollHeight }
+    : null;
   const bottom = $('.tabbar')?.getBoundingClientRect().top ?? innerHeight;
-  const avail = bottom - 12 - box.getBoundingClientRect().top;
-  const width = Math.floor(Math.min(full, Math.max(160, avail) * vp.width / vp.height));
-  box.style.width = `${width}px`;
-  scale = width / vp.width;
-  const canvas = await renderPage(pdf, pageNo, width);
+  const avail = Math.max(160, bottom - 12 - sc.getBoundingClientRect().top);
+  sc.style.height = `${Math.floor(avail)}px`;
+  const fit = Math.min(sc.clientWidth, avail * vp.width / vp.height);
+  const width = Math.floor(fit * zoom);
+  const dpr = Math.min(devicePixelRatio || 1, Math.sqrt(MAX_CANVAS_PX / (width * width * vp.height / vp.width)));
+  const canvas = await renderPage(pdf, pageNo, width, dpr);
   if (token !== renderToken || !root) return;
+  scale = width / vp.width;
+  box.style.width = `${width}px`;
   holder.replaceChildren(canvas);
   drawOverlay();
+  if (center) {
+    sc.scrollLeft = center.x * sc.scrollWidth - sc.clientWidth / 2;
+    sc.scrollTop = center.y * sc.scrollHeight - sc.clientHeight / 2;
+  } else if (!keepCenter) {
+    sc.scrollTop = 0;
+    sc.scrollLeft = 0;
+  }
 }
 
 function drawOverlay() {
@@ -279,16 +327,53 @@ function rowAt(y) {
   return pageEntry()?.systems.find((sy) => y >= sy.y0 && y <= sy.y1) ?? null;
 }
 
+// Two fingers pan the zoomed page (and pinch to zoom); one finger edits.
+function startPan() {
+  if (drag) clearTimeout(drag.timer);
+  if (drag?.moved && drag.target) changed();
+  drag = null;
+  const [a, b] = [...pointers.values()];
+  const sc = $('.me-scroll', root);
+  pan = { mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, dist: Math.hypot(a.x - b.x, a.y - b.y), last: null, sc };
+}
+
+function movePan() {
+  const [a, b] = [...pointers.values()];
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  const prev = pan.last ?? pan.mid;
+  pan.sc.scrollLeft -= mid.x - prev.x;
+  pan.sc.scrollTop -= mid.y - prev.y;
+  pan.last = mid;
+  pan.endDist = Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function endPan() {
+  const ratio = (pan.endDist ?? pan.dist) / pan.dist;
+  pan = null;
+  if (ratio > PINCH_STEP) stepZoom(1);
+  else if (ratio < 1 / PINCH_STEP) stepZoom(-1);
+}
+
 function onDown(e) {
+  e.currentTarget.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 2) { startPan(); return; }
+  if (pointers.size > 2 || pan) return;
   const p = toPts(e);
   const tol = HIT_PX / scale;
   drag = { start: p, moved: false, target: null, timer: 0 };
-  e.currentTarget.setPointerCapture(e.pointerId);
   const pg = pageEntry();
   if (mode === 'rows' && pg) {
     for (const sy of pg.systems) {
       if (Math.abs(p.y - sy.y0) <= tol && p.x >= 0) { drag.target = { sy, edge: 'y0' }; break; }
       if (Math.abs(p.y - sy.y1) <= tol) { drag.target = { sy, edge: 'y1' }; break; }
+    }
+    if (drag.target) {
+      // Bands can't overlap: an edge stops at the neighbouring band.
+      const t = drag.target;
+      const others = pg.systems.filter((o) => o !== t.sy);
+      t.lo = Math.max(0, ...others.filter((o) => o.y1 <= t.sy.y0 + 0.5).map((o) => o.y1));
+      t.hi = Math.min(pageSize.h, ...others.filter((o) => o.y0 >= t.sy.y1 - 0.5).map((o) => o.y0));
     }
     const sy = rowAt(p.y);
     const touched = drag.target?.sy ?? sy;
@@ -315,6 +400,8 @@ function onDown(e) {
 }
 
 function onMove(e) {
+  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pan) { if (pointers.size >= 2) movePan(); return; }
   if (!drag) return;
   const p = toPts(e);
   if (!drag.moved && Math.hypot(p.x - drag.start.x, p.y - drag.start.y) * scale > 6) {
@@ -323,8 +410,8 @@ function onMove(e) {
   }
   if (!drag.moved || !drag.target) return;
   const t = drag.target;
-  if (t.edge === 'y0') t.sy.y0 = r1(Math.min(p.y, t.sy.y1 - MIN_ROW_PTS));
-  else if (t.edge === 'y1') t.sy.y1 = r1(Math.max(p.y, t.sy.y0 + MIN_ROW_PTS));
+  if (t.edge === 'y0') t.sy.y0 = r1(Math.max(t.lo, Math.min(p.y, t.sy.y1 - MIN_ROW_PTS)));
+  else if (t.edge === 'y1') t.sy.y1 = r1(Math.min(t.hi, Math.max(p.y, t.sy.y0 + MIN_ROW_PTS)));
   else if (t.edgeIndex != null) {
     const edges = edgesOf(t.sy);
     const lo = t.edgeIndex > 0 ? edges[t.edgeIndex - 1] + 2 : 0;
@@ -336,6 +423,8 @@ function onMove(e) {
 }
 
 function onUp(e) {
+  pointers.delete(e.pointerId);
+  if (pan) { if (pointers.size < 2) endPan(); return; }
   if (!drag) return;
   clearTimeout(drag.timer);
   const d = drag;

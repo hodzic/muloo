@@ -1,7 +1,7 @@
 // Service worker: cache-first, versioned (DESIGN.md §8).
 // Bump CACHE whenever a shell file changes so clients get the update toast.
 
-const CACHE = 'muloo-v41';
+const CACHE = 'muloo-v42';
 const INBOX = 'muloo-inbox';
 
 const SHELL = [
@@ -37,6 +37,7 @@ const SHELL = [
   'js/scores/detect.js',
   'js/scores/map-store.js',
   'js/scores/map-editor.js',
+  'js/scores/map-help.js',
   'js/scores/follow.js',
   'js/scores/follow-view.js',
   'js/practice/practice-score.js',
@@ -72,6 +73,7 @@ const SHELL = [
   'js/tuner/pluck.js',
   'js/tuner/target.js',
   'js/util/dom.js',
+  'js/util/help.js',
   'js/util/fft.js',
   'js/util/wakelock.js',
   'js/util/wav.js',

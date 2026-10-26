@@ -6,7 +6,7 @@
 import { listScores, getScore, saveScore, deleteScore, importPdf, openPdf, renderPage, takeSharedFiles } from './scores.js';
 import { createMiniMetronome } from '../metronome/metronome-ui.js';
 import { loadMap } from './map-store.js';
-import { openMapEditor, closeMapEditor } from './map-editor.js';
+import { openMapEditor, closeMapEditor, isMapEditorOpen, openMapHelp } from './map-editor.js';
 import { isQuotaError } from '../storage/db.js';
 import { holdWakeLock, releaseWakeLock } from '../util/wakelock.js';
 import { $, escapeHtml, toast, navigate } from '../util/dom.js';
@@ -320,3 +320,7 @@ function setImmersive(on) {
   else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   if (pdf) requestAnimationFrame(() => showPage(page));
 }
+
+// The ? button shows the map editor's how-to while it's open.
+export const hasHelp = isMapEditorOpen;
+export const showHelp = () => isMapEditorOpen() && openMapHelp();

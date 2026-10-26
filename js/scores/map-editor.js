@@ -37,6 +37,7 @@ let pageSize = { w: 595, h: 842 };
 let dirty = false;
 let orderManual = false;
 let drag = null;
+let current = null; // the row last touched, shown in orange
 let onCloseCb = null;
 let renderToken = 0;
 
@@ -51,14 +52,23 @@ export function openMapEditor(host, { score: s, pdf: p, map: initial, verified }
   dirty = false;
   mode = 'rows';
   pageNo = map.pages[0]?.page ?? 1;
+  current = null;
   onCloseCb = onClose;
   root.innerHTML = markup(verified);
   bind();
   renderAll();
+  addEventListener('resize', onResize);
+}
+
+let resizeTimer = 0;
+function onResize() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (root && (mode === 'rows' || mode === 'bars')) renderPage_(); }, 200);
 }
 
 export function closeMapEditor() {
   if (!root) return;
+  removeEventListener('resize', onResize);
   root.innerHTML = '';
   root = null;
   onCloseCb = null;
@@ -182,6 +192,7 @@ function pageEntry(create = false) {
 function gotoPage(n) {
   if (n < 1 || n > pdf.numPages) return;
   pageNo = n;
+  current = null;
   renderPage_();
 }
 
@@ -191,10 +202,18 @@ async function renderPage_() {
   $('.me-prev', root).disabled = pageNo <= 1;
   $('.me-next', root).disabled = pageNo >= pdf.numPages;
   const holder = $('.me-canvas', root);
-  const width = Math.floor($('.me-page', root).clientWidth);
   const page = await pdf.getPage(pageNo);
   const vp = page.getViewport({ scale: 1 });
+  if (token !== renderToken || !root) return;
   pageSize = { w: vp.width, h: vp.height };
+  // Fit the whole page between here and the tab bar, so every row can be marked.
+  const box = $('.me-page', root);
+  box.style.width = '';
+  const full = box.clientWidth;
+  const bottom = $('.tabbar')?.getBoundingClientRect().top ?? innerHeight;
+  const avail = bottom - 12 - box.getBoundingClientRect().top;
+  const width = Math.floor(Math.min(full, Math.max(160, avail) * vp.width / vp.height));
+  box.style.width = `${width}px`;
   scale = width / vp.width;
   const canvas = await renderPage(pdf, pageNo, width);
   if (token !== renderToken || !root) return;
@@ -210,7 +229,7 @@ function drawOverlay() {
   let html = '';
   systems.forEach((sy) => {
     const top = sy.y0 * scale, h = (sy.y1 - sy.y0) * scale;
-    html += `<div class="me-row${mode === 'rows' ? ' active' : ''}" style="top:${top}px;height:${h}px"></div>`;
+    html += `<div class="me-row${sy === current ? ' current' : ''}" style="top:${top}px;height:${h}px"></div>`;
     if (mode === 'bars' || mode === 'rows') {
       const edges = edgesOf(sy);
       edges.forEach((x, k) => {
@@ -272,16 +291,20 @@ function onDown(e) {
       if (Math.abs(p.y - sy.y1) <= tol) { drag.target = { sy, edge: 'y1' }; break; }
     }
     const sy = rowAt(p.y);
+    const touched = drag.target?.sy ?? sy;
+    if (touched && touched !== current) { current = touched; drawOverlay(); }
     if (!drag.target && sy) {
       drag.timer = setTimeout(() => {
         if (!drag || drag.moved) return;
         drag.long = true;
         pg.systems.splice(pg.systems.indexOf(sy), 1);
+        if (current === sy) current = null;
         changed();
       }, 600);
     }
   } else if (mode === 'bars') {
     const sy = rowAt(p.y);
+    if (sy && sy !== current) { current = sy; drawOverlay(); }
     if (sy) {
       const edges = edgesOf(sy);
       const k = edges.findIndex((x) => Math.abs(x - p.x) <= tol);
@@ -333,6 +356,7 @@ function tapRows(p) {
     const lower = { ...structuredClone(sy), y0: r1(p.y) };
     sy.y1 = r1(p.y);
     pg.systems.push(lower);
+    current = lower;
   } else {
     const sorted = [...pg.systems].sort((a, b) => a.y0 - b.y0);
     const above = sorted.filter((s) => s.y1 < p.y).pop();
@@ -343,13 +367,15 @@ function tapRows(p) {
       // Merge the rows on either side (e.g. notation and tab detected apart).
       above.y1 = below.y1;
       pg.systems.splice(pg.systems.indexOf(below), 1);
+      current = above;
     } else {
       const ref = sorted[0];
       const x0 = ref ? edgesOf(ref)[0] : pageSize.w * 0.08, x1 = ref ? edgesOf(ref).at(-1) : pageSize.w * 0.92;
       const h = Math.min(typical, (below?.y0 ?? pageSize.h) - (above?.y1 ?? 0) - 2);
       if (h < MIN_ROW_PTS) return;
       const y0 = Math.max(above?.y1 ?? 0, Math.min(p.y - h / 2, (below?.y0 ?? pageSize.h) - h));
-      pg.systems.push({ y0: r1(y0), y1: r1(y0 + h), measures: [{ n: 0, x0: r1(x0), x1: r1(x1) }] });
+      current = { y0: r1(y0), y1: r1(y0 + h), measures: [{ n: 0, x0: r1(x0), x1: r1(x1) }] };
+      pg.systems.push(current);
     }
   }
   changed();

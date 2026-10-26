@@ -388,9 +388,11 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
   background: #fff;
   border-radius: 4px;
   touch-action: pan-y;
+  overscroll-behavior: contain;
   outline: none;
   user-select: none;
 }
+.page-stage.zoomed { overflow-x: auto; touch-action: pan-x pan-y; }
 .page-stage canvas { display: block; }
 .page-wrap { position: relative; }
 /* First measure number of a row, at the row's top-left like a printed score. */

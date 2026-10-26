@@ -252,7 +252,8 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .metro.mini .dot { width: 10px; height: 10px; }
 .metro.mini .dot.first { width: 12px; height: 12px; }
 .metronome-view { flex: 1; display: flex; flex-direction: column; gap: 12px; }
-.beat-count { font-size: 120px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; color: var(--muted); }
+.stage.metro-stage { flex: none; min-height: 0; padding: 8px; }
+.beat-count { font-size: 64px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; color: var(--muted); }
 .beat-count.first { color: var(--accent); }
 .beat-count.count-in { color: var(--warn); }
 
@@ -274,8 +275,9 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .stage .hint { color: var(--muted); margin: 8px 0 0; font-size: 14px; }
 .stage.flash { animation: flash 0.15s ease-out; }
 .stage.flash-accent { animation: flash-accent 0.2s ease-out; }
-@keyframes flash { from { background: var(--text); } to { background: var(--surface); } }
-@keyframes flash-accent { from { background: var(--accent); } to { background: var(--surface); } }
+/* Soft tints, not full white/orange: a flash every beat is tiring to look at. */
+@keyframes flash { from { background: color-mix(in srgb, var(--text) 14%, var(--surface)); } to { background: var(--surface); } }
+@keyframes flash-accent { from { background: color-mix(in srgb, var(--accent) 30%, var(--surface)); } to { background: var(--surface); } }
 .btn.record { min-height: 64px; font-size: 20px; color: var(--bad); }
 
 @media (orientation: portrait) and (max-height: 700px) {

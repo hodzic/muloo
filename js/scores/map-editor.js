@@ -43,6 +43,7 @@ let orderManual = false;
 let drag = null;
 let current = null; // the row last touched, shown in orange
 let zoom = 1;
+let currentMeasure = null; // the measure last tapped in Order mode
 const pointers = new Map(); // pointerId → {x, y} on the overlay
 let pan = null; // two-finger pan/pinch in progress
 let onCloseCb = null;
@@ -74,7 +75,7 @@ export const isMapEditorOpen = () => !!root;
 let resizeTimer = 0;
 function onResize() {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => { if (root && (mode === 'rows' || mode === 'bars')) renderPage_(); }, 200);
+  resizeTimer = setTimeout(() => { if (root && onPage()) renderPage_(); }, 200);
 }
 
 export function closeMapEditor() {
@@ -116,7 +117,7 @@ function markup(verified) {
         <div class="me-scroll"><div class="me-page"><div class="me-canvas"></div><div class="me-overlay"></div></div></div>
       </div>
       <div class="me-order-panel" hidden>
-        <div class="me-chips" aria-label="Measures"></div>
+        <p class="muted me-order-empty" hidden>No measures yet: add rows and barlines first.</p>
         <label>Playing order <input class="me-order" type="text" spellcheck="false" placeholder="e.g. 1-16, 1-15, 17-32"></label>
         <p class="me-order-error warn" hidden></p>
         <p class="me-preview muted"></p>
@@ -158,7 +159,6 @@ function bind() {
     if (drag) clearTimeout(drag.timer);
     drag = null;
   });
-  $('.me-chips', root).addEventListener('click', onChip);
   $('.me-order', root).addEventListener('input', (e) => {
     orderManual = e.target.value.trim() !== '';
     map.order = e.target.value;
@@ -179,7 +179,7 @@ function bind() {
 const HELP = {
   rows: 'Drag a band’s edge to fit the row. Tap to split, merge or add; long-press to delete. More under ?',
   bars: 'Tap a row to add a barline, tap one to remove it, drag to move it. More under ?',
-  order: 'Tap a measure to mark repeats, endings, D.S. and Coda, or type the order. More under ?',
+  order: 'Tap a measure on the page to mark repeats, endings, D.S. and Coda, or type the order below. More under ?',
   details: '',
 };
 
@@ -189,12 +189,12 @@ function renderAll() {
     b.setAttribute('aria-checked', b.dataset.mode === mode);
   });
   $('.me-help', root).textContent = HELP[mode];
-  $('.me-page-panel', root).hidden = !(mode === 'rows' || mode === 'bars');
+  $('.me-page-panel', root).hidden = !onPage();
   $('.me-order-panel', root).hidden = mode !== 'order';
   $('.me-details-panel', root).hidden = mode !== 'details';
   $('.me-popover', root).hidden = true;
-  if (mode === 'rows' || mode === 'bars') renderPage_();
   if (mode === 'order') renderOrder();
+  if (onPage()) renderPage_();
   if (mode === 'details') {
     $('.me-title', root).value = map.title ?? '';
     $('.me-timesig', root).value = TIME_SIGS[map.timeSig] ? map.timeSig : '4/4';
@@ -202,7 +202,9 @@ function renderAll() {
   }
 }
 
-// Page view with rows and barlines.
+// Page view with rows and barlines, or measures and their marks in Order mode.
+
+const onPage = () => mode === 'rows' || mode === 'bars' || mode === 'order';
 
 function pageEntry(create = false) {
   let pg = map.pages.find((p) => p.page === pageNo);
@@ -249,7 +251,9 @@ async function renderPage_({ keepCenter = false } = {}) {
     ? { x: (sc.scrollLeft + sc.clientWidth / 2) / sc.scrollWidth, y: (sc.scrollTop + sc.clientHeight / 2) / sc.scrollHeight }
     : null;
   const bottom = $('.tabbar')?.getBoundingClientRect().top ?? innerHeight;
-  const avail = Math.max(160, bottom - 12 - sc.getBoundingClientRect().top);
+  // In Order mode the typed order sits below the page.
+  const below = mode === 'order' ? $('.me-order-panel', root).offsetHeight + 8 : 0;
+  const avail = Math.max(160, bottom - 12 - below - sc.getBoundingClientRect().top);
   sc.style.height = `${Math.floor(avail)}px`;
   const fit = Math.min(sc.clientWidth, avail * vp.width / vp.height);
   const width = Math.floor(fit * zoom);
@@ -277,8 +281,21 @@ function drawOverlay() {
   let html = '';
   systems.forEach((sy) => {
     const top = sy.y0 * scale, h = (sy.y1 - sy.y0) * scale;
+    if (mode === 'order') {
+      html += `<div class="me-row" style="top:${top}px;height:${h}px"></div>`;
+      const ms = [...sy.measures].sort((a, b) => a.x0 - b.x0);
+      ms.forEach((m, j) => {
+        const { before, after } = markLabels(m);
+        const left = m.x0 * scale, w = (m.x1 - m.x0) * scale;
+        if (m === currentMeasure) html += `<div class="me-meas" style="left:${left}px;top:${top}px;width:${w}px;height:${h}px"></div>`;
+        if (j === 0) html += `<div class="row-num" style="left:${Math.max(12, left)}px;top:${top}px">${m.n}</div>`;
+        if (before) html += `<div class="me-mark" style="left:${left + 2}px;top:${top + h - 2}px">${escapeHtml(before)}</div>`;
+        if (after) html += `<div class="me-mark end" style="left:${left + w - 2}px;top:${top + h - 2}px">${escapeHtml(after)}</div>`;
+      });
+      return;
+    }
     html += `<div class="me-row${sy === current ? ' current' : ''}" style="top:${top}px;height:${h}px"></div>`;
-    if (mode === 'bars' || mode === 'rows') {
+    {
       const edges = edgesOf(sy);
       edges.forEach((x, k) => {
         const inner = k > 0 && k < edges.length - 1;
@@ -434,6 +451,15 @@ function onUp(e) {
   const p = toPts(e);
   if (mode === 'rows') tapRows(p);
   else if (mode === 'bars') tapBars(p, d.target);
+  else if (mode === 'order') tapOrder(p);
+}
+
+function tapOrder(p) {
+  const m = rowAt(p.y)?.measures.find((x) => p.x >= x.x0 && p.x < x.x1);
+  if (!m) return;
+  currentMeasure = m;
+  drawOverlay();
+  openMeasure(m);
 }
 
 function tapRows(p) {
@@ -515,21 +541,18 @@ function recomputeOrder() {
 }
 
 function renderOrder() {
-  const ms = measureObjects();
-  $('.me-chips', root).innerHTML = ms.length
-    ? ms.map((m) => {
-      const marks = Object.keys(m.marks ?? {});
-      const label = [
-        m.marks?.repeatStart ? '𝄆' : '', m.marks?.segno ? '𝄋' : '', m.marks?.coda ? '𝄌' : '',
-        m.marks?.ending1 ? '¹' : '', m.marks?.ending2 ? '²' : '',
-      ].join('');
-      const after = [m.marks?.repeatEnd ? '𝄇' : '', m.marks?.ds ? 'D.S.' : '', m.marks?.dc ? 'D.C.' : '', m.marks?.toCoda ? '→𝄌' : '', m.marks?.fine ? 'Fine' : ''].join(' ').trim();
-      const extra = [m.timeSig, m.tempo ? `♩${m.tempo}` : ''].filter(Boolean).join(' ');
-      return `<button class="chip${marks.length || extra ? ' marked' : ''}" data-n="${m.n}">${label}<b>${m.n}</b>${after ? ` <small>${escapeHtml(after)}</small>` : ''}${extra ? ` <small>${escapeHtml(extra)}</small>` : ''}</button>`;
-    }).join('')
-    : '<p class="muted">No measures yet: add rows and barlines first.</p>';
+  const has = measureObjects().length > 0;
+  $('.me-order-empty', root).hidden = has;
   $('.me-order', root).value = map.order ?? '';
   renderPreview();
+}
+
+/** Marks shown at the start and end of a measure, e.g. "𝄆 ¹" and "𝄇 D.S.". */
+function markLabels(m) {
+  const k = m.marks ?? {};
+  const before = [k.repeatStart && '𝄆', k.segno && '𝄋', k.coda && '𝄌', k.ending1 && '1.', k.ending2 && '2.', m.timeSig, m.tempo && `♩=${m.tempo}`].filter(Boolean).join(' ');
+  const after = [k.repeatEnd && '𝄇', k.toCoda && 'To 𝄌', k.ds && 'D.S.', k.dc && 'D.C.', k.fine && 'Fine'].filter(Boolean).join(' ');
+  return { before, after };
 }
 
 function renderPreview() {
@@ -548,10 +571,7 @@ function renderPreview() {
   }
 }
 
-function onChip(e) {
-  const chip = e.target.closest('.chip');
-  if (!chip) return;
-  const m = measureObjects().find((x) => x.n === +chip.dataset.n);
+function openMeasure(m) {
   const pop = $('.me-popover', root);
   pop.innerHTML = `
     <h3>Measure ${m.n}</h3>
@@ -578,6 +598,7 @@ function onChip(e) {
     if (!orderManual) recomputeOrder();
     dirty = true;
     renderOrder();
+    drawOverlay();
   };
 }
 

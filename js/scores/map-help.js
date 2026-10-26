@@ -24,8 +24,8 @@ const HELP = `
   </ul>
   <h3>Order</h3>
   <ul>
-    <li>Tap a measure to mark repeats, 1st and 2nd endings, D.S., D.C., Coda and Fine, or a change of time signature or tempo. The playing order is worked out from these marks.</li>
-    <li>Or type the order instead, e.g. <i>1-16, 1-15, 17-32</i>.</li>
+    <li>The page shows each row's first measure number. Tap a measure to mark repeats, 1st and 2nd endings, D.S., D.C., Coda and Fine, or a change of time signature or tempo. The marks show on the page in orange, and the playing order is worked out from them.</li>
+    <li>Or type the order below the page instead, e.g. <i>1-16, 1-15, 17-32</i>.</li>
   </ul>
   <h3>Details</h3>
   <ul>

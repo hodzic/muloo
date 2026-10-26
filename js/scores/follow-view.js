@@ -199,6 +199,15 @@ export class FollowView {
       if (!el.isConnected) return;
       slot.inner.prepend(canvas);
       Object.assign(slot, { scale, width, ready: true });
+      const sys = this.flat.systems[k];
+      const first = this.flat.measures[sys?.first];
+      if (first && sys.last >= sys.first) {
+        const num = document.createElement('span');
+        num.className = 'row-num';
+        num.textContent = first.n;
+        num.style.left = `${Math.max(32, first.x0 * scale)}px`;
+        slot.inner.append(num);
+      }
       this.drawLoop(slot);
       this.render(false);
     }).catch((e) => console.error('Could not draw row', e));

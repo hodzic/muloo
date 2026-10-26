@@ -1,4 +1,4 @@
-// Metronome controls: the full bar (Practice) and the mini bar (Scores).
+// Metronome controls: the full bar (Metronome tab) and the mini bar (Practice, Scores).
 
 import { metronome, TIME_SIGS, SUBDIVISIONS, BPM_MIN, BPM_MAX } from './scheduler.js';
 import { settings } from '../storage/db.js';
@@ -112,24 +112,27 @@ export function createMetronomeBar(container, { flashTarget } = {}) {
     $('.subdivision', root).value = metronome.subdivision;
     $('.click-mode', root).value = metronome.clickMode;
     $('.volume', root).value = metronome.volume;
-    $('.start-label', root).textContent = 'Metronome';
+    $('.start-label', root).textContent = metronome.running ? 'Stop' : 'Start';
   };
   refresh();
   metronome.onChange(refresh);
 
-  if (flashTarget) {
-    metronome.onBeat((ev) => {
-      if (ev.sub || metronome.audible) return;
-      flashTarget.classList.remove('flash', 'flash-accent');
-      void flashTarget.offsetWidth; // restart the animation
-      flashTarget.classList.add(ev.beat === 0 ? 'flash-accent' : 'flash');
-    });
-  }
+  if (flashTarget) flashOnBeat(flashTarget);
   return root;
 }
 
-/** Compact bar: start/stop, BPM ± and beat dots. */
-export function createMiniMetronome(container) {
+/** Flash `el` on each beat in visual-only mode. */
+function flashOnBeat(el) {
+  metronome.onBeat((ev) => {
+    if (ev.sub || metronome.audible) return;
+    el.classList.remove('flash', 'flash-accent');
+    void el.offsetWidth; // restart the animation
+    el.classList.add(ev.beat === 0 ? 'flash-accent' : 'flash');
+  });
+}
+
+/** Compact bar: start/stop, BPM ± and beat dots. `flashTarget` as for the full bar. */
+export function createMiniMetronome(container, { flashTarget } = {}) {
   initMetronome();
   container.innerHTML = `
     <div class="metro mini">
@@ -144,5 +147,6 @@ export function createMiniMetronome(container) {
   const refresh = () => refreshCommon(root);
   refresh();
   metronome.onChange(refresh);
+  if (flashTarget) flashOnBeat(flashTarget);
   return root;
 }

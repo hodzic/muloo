@@ -4,7 +4,7 @@ import { listInputs, setInputDevice, setInputGainDb, looksBluetooth, getInput, o
 import { settings } from './storage/db.js';
 import { $, escapeHtml, formatBytes } from './util/dom.js';
 
-export const APP_VERSION = 'muloo-v36';
+export const APP_VERSION = 'muloo-v37';
 
 let dialog;
 

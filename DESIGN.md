@@ -186,7 +186,7 @@ The user selects the string pair, so the app always knows the expected frequency
 - **Time signatures:** 2/4, 3/4, 4/4, 5/4, 6/8, 7/8, and 12/8.
 - **Subdivisions:** none, eighths, triplets, or sixteenths.
 - **Visual:** a beat indicator, which must stay in sync with the audio. Drive it from the scheduled times, not from the timer.
-- **Mini metronome:** a small bar, visible on the Scores and Recorder tabs, for start/stop and BPM.
+- **Mini metronome:** a small bar on the Practice tab, for start/stop and BPM.
 - **API:** expose `start(atTime)`, `stop()`, `countIn(bars)`, and `onBeat` to the Recorder.
 
 ### 5.3a Metronome during recording

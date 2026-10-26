@@ -398,7 +398,7 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .follow .row-num { top: 6px; font-size: 16px; transform: translateX(calc(-100% - 6px)); }
 
 /* Full-screen score: hide all chrome */
-body.immersive .topbar, body.immersive .tabbar, body.immersive .viewer-head, body.immersive .score-viewer .mini-slot { display: none; }
+body.immersive .topbar, body.immersive .tabbar, body.immersive .viewer-head { display: none; }
 body.immersive main { padding: 0; }
 body.immersive .score-viewer { gap: 0; }
 body.immersive .page-stage { border-radius: 0; }

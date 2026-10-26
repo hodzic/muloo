@@ -16,6 +16,7 @@ const ANALYSIS_MS = 40;
 const RMS_GATE = 10 ** (-54 / 20);
 const APERIODICITY_GATE = 0.15;
 const IN_TUNE_CENTS = 3;
+const LONG_PRESS_MS = 500;
 const HISTORY = 5;
 const IDLE_MS = 1500;
 const A4_MIN = 430, A4_MAX = 450;
@@ -32,7 +33,7 @@ let shownMidi = null;
 let shownString = null; // preset string the reading is relative to, or null for a plain note
 let micPaused = false; // mic closed while a reference string rings
 let toneString = null; // index of the string whose reference pluck is ringing
-let focusString = null; // string picked by tapping its button: readings stay relative to it
+let focusString = null; // string locked by long-pressing its button: readings stay relative to it
 let toneToken = 0;
 let listening = false; // mic open and analysing
 
@@ -135,20 +136,29 @@ export function mount(el) {
   };
   onPressRepeat($('.a4-down', el), () => stepA4(-1));
   onPressRepeat($('.a4-up', el), () => stepA4(1));
-  $('.strings', el).addEventListener('click', (e) => {
+  // Tap plucks a string; long-press locks the reading to it (again: unlocks).
+  // Handled on pointerup, not click: the buttons re-render while held.
+  const strip = $('.strings', el);
+  let press = null;
+  const endPress = () => { clearTimeout(press?.timer); press = null; };
+  strip.addEventListener('pointerdown', (e) => {
     const b = e.target.closest('[data-string]');
     if (!b) return;
-    const i = +b.dataset.string;
-    if (i === focusString) {
-      // Tapping the picked string again lets go: back to the nearest string.
-      focusString = null;
-      shownString = null;
-      shownMidi = null;
-      setTone(null);
-      return;
-    }
-    focusString = i;
-    setTone(i);
+    endPress();
+    const p = { i: +b.dataset.string, long: false };
+    p.timer = setTimeout(() => { p.long = true; toggleLock(p.i); navigator.vibrate?.(15); }, LONG_PRESS_MS);
+    press = p;
+  });
+  strip.addEventListener('pointerup', () => {
+    if (press && !press.long) setTone(press.i);
+    endPress();
+  });
+  strip.addEventListener('pointercancel', endPress);
+  strip.addEventListener('contextmenu', (e) => e.preventDefault());
+  strip.addEventListener('click', (e) => {
+    // Keyboard activation (no pointer) plucks too.
+    const b = e.target.closest('[data-string]');
+    if (b && e.detail === 0) setTone(+b.dataset.string);
   });
   renderSettings();
 }
@@ -196,13 +206,13 @@ function renderMode() {
 
 function renderStrings() {
   const strings = presetStrings();
-  // Outlined: the tapped string, else the string being heard right now
+  // Outlined: the locked string, else the string being heard right now
   // (none while idle). Green once the reading is in tune with it.
   const heard = !isIdle() && toneString == null ? shownString : null;
   const target = focusString ?? heard;
   const inTune = target != null && target === heard && $('.tuner-display', root).classList.contains('in-tune');
   $('.strings', root).innerHTML = strings.map((m, i) => `
-    <button class="btn string${i === target ? ' target' : ''}${i === target && inTune ? ' in-tune' : ''}${i === toneString ? ' playing' : ''}" data-string="${i}"
+    <button class="btn string${i === target ? ' target' : ''}${i === focusString ? ' locked' : ''}${i === target && inTune ? ' in-tune' : ''}${i === toneString ? ' playing' : ''}" data-string="${i}"
       aria-pressed="${i === toneString}" aria-label="Play ${noteName(m)}${noteOctave(m)}">${noteName(m)}<sub>${noteOctave(m)}</sub></button>`).join('');
 }
 
@@ -390,9 +400,16 @@ function loop(now) {
   update(median(history));
 }
 
+function toggleLock(i) {
+  focusString = focusString === i ? null : i;
+  shownString = null;
+  shownMidi = null;
+  renderStrings();
+}
+
 /**
- * The reading relative to the tapped string (however far off, see
- * target.js), or to the nearest string when none is tapped.
+ * The reading relative to the locked string (however far off, see
+ * target.js), or to the nearest string when none is locked.
  */
 function readingFor(freq, strings, a4) {
   if (focusString == null || focusString >= strings.length) return chooseTarget(freq, strings, a4, shownString);
@@ -421,7 +438,7 @@ function update(freq) {
   const abs = Math.abs(shownCents);
   $('.cents-value', root).textContent = `${shownCents >= 0 ? '+' : '−'}${abs.toFixed(abs >= 100 ? 0 : 1)} ¢`;
   $('.hz-value', root).textContent = `${freq.toFixed(2)} Hz`;
-  // A note away from the tapped string is never "in tune", whatever its cents.
+  // A note away from the locked string is never "in tune", whatever its cents.
   const inTune = abs <= IN_TUNE_CENTS && (t.string != null || focusString == null);
   $('.tune-hint', root).textContent = t.string == null
     ? (focusString != null ? `Play ${noteName(presetStrings()[focusString])}${noteOctave(presetStrings()[focusString])}` : '')

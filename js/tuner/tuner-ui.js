@@ -51,7 +51,6 @@ export function mount(el) {
           <button class="btn" data-tuner-mode="standard" role="radio">Standard</button>
           <button class="btn" data-tuner-mode="beats" role="radio">Beats</button>
         </div>
-        <button class="btn round help-btn" aria-label="How to use the tuner">?</button>
       </div>
       <div class="beats-panel" hidden></div>
       <div class="tuner-display listen-toggle idle" role="button" tabindex="0" aria-pressed="false">
@@ -91,7 +90,6 @@ export function mount(el) {
     </div>`;
 
   mountBeats($('.beats-panel', el));
-  $('.help-btn', el).addEventListener('click', () => openTunerHelp(settings.get('tuner.mode', 'standard')));
   // The whole display (gauge, or the beat display in Beats mode) toggles the mic.
   const beatDisplay = $('.beat-display', el);
   beatDisplay.classList.add('listen-toggle');
@@ -268,6 +266,11 @@ async function resumeMic() {
   } catch {
     stopListening();
   }
+}
+
+/** The how-to for the current tuner mode (opened from the top bar). */
+export function showHelp() {
+  openTunerHelp(settings.get('tuner.mode', 'standard'));
 }
 
 export async function enter() {

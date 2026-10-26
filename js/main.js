@@ -36,6 +36,7 @@ function show(tab, detail) {
     btn.setAttribute('aria-selected', key === tab);
   }
   $('#view-title').textContent = VIEWS[tab].title;
+  $('#help-btn').hidden = !VIEWS[tab].module.showHelp;
   settings.set('lastTab', tab);
   VIEWS[tab].module.enter(detail);
 }
@@ -83,6 +84,7 @@ function micHint() {
 async function init() {
   await settings.load();
   initSettings($('#settings-btn'), $('#settings-dialog'));
+  $('#help-btn').addEventListener('click', () => VIEWS[currentTab]?.module.showHelp?.());
   micHint();
 
   for (const [key, view] of Object.entries(VIEWS)) view.module.mount($(`#view-${key}`));

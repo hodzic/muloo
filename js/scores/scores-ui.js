@@ -9,10 +9,12 @@ import { flatten } from './score-map.js';
 import { openMapEditor, closeMapEditor, isMapEditorOpen, openMapHelp } from './map-editor.js';
 import { isQuotaError } from '../storage/db.js';
 import { holdWakeLock, releaseWakeLock } from '../util/wakelock.js';
-import { $, escapeHtml, toast, navigate } from '../util/dom.js';
+import { $, escapeHtml, toast } from '../util/dom.js';
 
 const SWIPE_PX = 50;
 const TAP_PX = 10;
+const ZOOMS = [1, 1.5, 2, 3];
+const MAX_CANVAS_PX = 12e6; // device pixels; bigger canvases fail or eat memory on phones
 const KEEP_PAGES = 2; // rendered pages kept on each side of the current one
 
 let root;
@@ -22,6 +24,8 @@ let pdf = null;
 let page = 1;
 let cache = new Map(); // page -> Promise<canvas>
 let renderWidth = 0;
+let zoom = 1;
+let pinch = null; // two-finger pinch on the page: { dist, ratio }
 let saveTimer = null;
 let pointer = null;
 let rowNumbers = null; // flatten(map) of the stored map, for measure numbers on the page
@@ -50,7 +54,8 @@ export function mount(el) {
         <div class="v-title"></div>
         <div class="v-page" aria-live="polite"></div>
         <button class="btn v-map" title="Rows, barlines and playing order for auto-scroll">Map</button>
-        <button class="btn v-practice" title="Open in Practice to auto-scroll and record">Practice</button>
+        <button class="btn icon v-zoom-out" aria-label="Zoom out"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 4a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13zM15.5 15.5L20 20M7.5 10.5h6"/></svg></button>
+        <button class="btn icon v-zoom-in" aria-label="Zoom in"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 4a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13zM15.5 15.5L20 20M7.5 10.5h6M10.5 7.5v6"/></svg></button>
         <button class="btn icon v-full" aria-label="Full screen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
       </div>
       <div class="page-stage" tabindex="0" aria-label="Score page. Tap left or right to turn."></div>
@@ -65,13 +70,30 @@ export function mount(el) {
   $('.score-list', el).addEventListener('click', onListClick);
   $('.v-back', el).addEventListener('click', closeViewer);
   $('.v-map', el).addEventListener('click', () => score && showMapEditor());
-  $('.v-practice', el).addEventListener('click', () => score && navigate('practice', { scoreId: score.id }));
+  $('.v-zoom-out', el).addEventListener('click', () => stepZoom(-1));
+  $('.v-zoom-in', el).addEventListener('click', () => stepZoom(1));
   $('.v-full', el).addEventListener('click', () => setImmersive(!document.body.classList.contains('immersive')));
 
   const stage = $('.page-stage', el);
   stage.addEventListener('pointerdown', (e) => { pointer = { x: e.clientX, y: e.clientY, id: e.pointerId }; });
   stage.addEventListener('pointercancel', () => { pointer = null; });
   stage.addEventListener('pointerup', onStagePointerUp);
+  // Pinch to zoom. Touch events, because the browser takes over pointers for panning.
+  stage.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) { pinch = { dist: touchDist(e.touches), ratio: 1 }; pointer = null; }
+  }, { passive: true });
+  stage.addEventListener('touchmove', (e) => {
+    if (!pinch || e.touches.length !== 2) return;
+    e.preventDefault();
+    pinch.ratio = touchDist(e.touches) / pinch.dist;
+  }, { passive: false });
+  stage.addEventListener('touchend', (e) => {
+    if (!pinch || e.touches.length) return;
+    const target = zoom * pinch.ratio;
+    pinch = null;
+    const best = ZOOMS.reduce((a, z) => (Math.abs(Math.log(z / target)) < Math.abs(Math.log(a / target)) ? z : a));
+    if (best !== zoom) setZoom(best);
+  });
   document.addEventListener('keydown', onKey);
   document.addEventListener('fullscreenchange', () => {
     if (!document.fullscreenElement) document.body.classList.remove('immersive');
@@ -181,6 +203,8 @@ async function openViewer(id) {
   $('.v-title', root).textContent = score.title;
   if (active) holdWakeLock('score');
   renderWidth = 0;
+  zoom = 1;
+  renderZoom();
   await loadRowNumbers();
   showPage(Math.min(Math.max(1, score.lastPage || 1), pdf.numPages));
   $('.page-stage', root).focus({ preventScroll: true });
@@ -259,19 +283,46 @@ function stageWidth() {
   return Math.floor($('.page-stage', root).clientWidth);
 }
 
+const touchDist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+
+function stepZoom(d) {
+  const i = ZOOMS.indexOf(zoom) + d;
+  if (i >= 0 && i < ZOOMS.length) setZoom(ZOOMS[i]);
+}
+
+/** Zoom the page, keeping the same spot in the middle of the view. */
+async function setZoom(z) {
+  const stage = $('.page-stage', root);
+  const cx = (stage.scrollLeft + stage.clientWidth / 2) / (stage.scrollWidth || 1);
+  const cy = (stage.scrollTop + stage.clientHeight / 2) / (stage.scrollHeight || 1);
+  zoom = z;
+  renderZoom();
+  await showPage(page, { keepScroll: true });
+  stage.scrollLeft = cx * stage.scrollWidth - stage.clientWidth / 2;
+  stage.scrollTop = cy * stage.scrollHeight - stage.clientHeight / 2;
+}
+
+function renderZoom() {
+  $('.v-zoom-out', root).disabled = zoom === ZOOMS[0];
+  $('.v-zoom-in', root).disabled = zoom === ZOOMS.at(-1);
+  $('.page-stage', root).classList.toggle('zoomed', zoom > 1);
+}
+
 function getCanvas(n) {
   if (!cache.has(n)) {
-    const p = renderPage(pdf, n, renderWidth);
+    const aspect = 1.42; // page height / width, roughly (A4); only bounds the pixel count
+    const dpr = Math.min(devicePixelRatio || 1, Math.sqrt(MAX_CANVAS_PX / (renderWidth * renderWidth * aspect)));
+    const p = renderPage(pdf, n, renderWidth, dpr);
     p.catch(() => cache.delete(n));
     cache.set(n, p);
   }
   return cache.get(n);
 }
 
-async function showPage(n) {
+async function showPage(n, { keepScroll = false } = {}) {
   if (!pdf) return;
   n = Math.min(Math.max(1, n), pdf.numPages);
-  const w = stageWidth();
+  const w = Math.floor(stageWidth() * zoom);
   if (Math.abs(w - renderWidth) > 1) {
     cache.clear();
     renderWidth = w;
@@ -293,7 +344,10 @@ async function showPage(n) {
   wrap.append(canvas, ...(await rowLabels(n)));
   if (doc !== pdf || page !== n) return;
   stage.replaceChildren(wrap);
-  stage.scrollTop = 0;
+  if (!keepScroll) {
+    stage.scrollTop = 0;
+    stage.scrollLeft = 0;
+  }
 
   for (const k of cache.keys()) if (Math.abs(k - n) > KEEP_PAGES) cache.delete(k);
   if (n < pdf.numPages) getCanvas(n + 1);
@@ -316,7 +370,8 @@ function onStagePointerUp(e) {
   if (!pointer || pointer.id !== e.pointerId) return;
   const dx = e.clientX - pointer.x, dy = e.clientY - pointer.y;
   pointer = null;
-  if (Math.abs(dx) > SWIPE_PX && Math.abs(dx) > Math.abs(dy) * 1.5) {
+  // Zoomed in, a sideways drag moves the page instead of turning it.
+  if (zoom === 1 && Math.abs(dx) > SWIPE_PX && Math.abs(dx) > Math.abs(dy) * 1.5) {
     turn(dx < 0 ? 1 : -1);
   } else if (Math.abs(dx) < TAP_PX && Math.abs(dy) < TAP_PX) {
     const r = e.currentTarget.getBoundingClientRect();
@@ -337,7 +392,7 @@ function onKey(e) {
 }
 
 function onResize() {
-  if (pdf && active && Math.abs(stageWidth() - renderWidth) > 1) showPage(page);
+  if (pdf && active && Math.abs(Math.floor(stageWidth() * zoom) - renderWidth) > 1) showPage(page, { keepScroll: true });
 }
 
 function setImmersive(on) {

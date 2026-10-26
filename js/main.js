@@ -38,10 +38,17 @@ function show(tab, detail) {
     btn.setAttribute('aria-selected', key === tab);
   }
   $('#view-title').textContent = VIEWS[tab].title;
-  $('#help-btn').hidden = !VIEWS[tab].module.showHelp;
+  renderHelpButton();
   settings.set('lastTab', tab);
   VIEWS[tab].module.enter(detail);
 }
+
+// A tab offers help when it has showHelp, or while its hasHelp() says so.
+function renderHelpButton() {
+  const m = VIEWS[currentTab]?.module;
+  $('#help-btn').hidden = !(m?.hasHelp ? m.hasHelp() : m?.showHelp);
+}
+document.addEventListener('helpchange', renderHelpButton);
 
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;

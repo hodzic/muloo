@@ -1,6 +1,6 @@
 // Short how-to for the tuner, one page per mode.
 
-import { $ } from '../util/dom.js';
+import { openHelp } from '../util/help.js';
 
 const HELP = {
   standard: `
@@ -39,11 +39,5 @@ const HELP = {
 
 /** Open the how-to for a tuner mode ('standard' or 'beats'). */
 export function openTunerHelp(mode) {
-  const d = document.createElement('dialog');
-  d.className = 'help-dialog';
-  d.innerHTML = `<div class="settings">${HELP[mode] ?? HELP.standard}<button class="btn primary wide help-close">Got it</button></div>`;
-  document.body.append(d);
-  d.addEventListener('close', () => d.remove());
-  $('.help-close', d).onclick = () => d.close();
-  d.showModal();
+  openHelp(HELP[mode] ?? HELP.standard);
 }

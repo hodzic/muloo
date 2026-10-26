@@ -5,7 +5,8 @@
 
 import { listScores, getScore, saveScore, deleteScore, importPdf, openPdf, renderPage, takeSharedFiles } from './scores.js';
 import { createMiniMetronome } from '../metronome/metronome-ui.js';
-import { loadMap } from './map-store.js';
+import { loadMap, getStoredMap } from './map-store.js';
+import { flatten } from './score-map.js';
 import { openMapEditor, closeMapEditor, isMapEditorOpen, openMapHelp } from './map-editor.js';
 import { isQuotaError } from '../storage/db.js';
 import { holdWakeLock, releaseWakeLock } from '../util/wakelock.js';
@@ -24,6 +25,7 @@ let cache = new Map(); // page -> Promise<canvas>
 let renderWidth = 0;
 let saveTimer = null;
 let pointer = null;
+let rowNumbers = null; // flatten(map) of the stored map, for measure numbers on the page
 
 const ago = (ms) => {
   const d = (Date.now() - ms) / 86400000;
@@ -183,6 +185,7 @@ async function openViewer(id) {
   $('.v-title', root).textContent = score.title;
   if (active) holdWakeLock('score');
   renderWidth = 0;
+  await loadRowNumbers();
   showPage(Math.min(Math.max(1, score.lastPage || 1), pdf.numPages));
   $('.page-stage', root).focus({ preventScroll: true });
 }
@@ -203,9 +206,10 @@ async function showMapEditor() {
   $('.score-viewer', root).hidden = true;
   host.hidden = false;
   openMapEditor(host, { score: s, pdf: doc, map: found.map, verified: found.verified }, {
-    onClose: () => {
+    onClose: async () => {
       host.hidden = true;
       $('.score-viewer', root).hidden = false;
+      await loadRowNumbers();
       showPage(page);
     },
   });
@@ -222,8 +226,32 @@ function closeViewer() {
   renderList();
 }
 
+// First measure number of each row, from the score's map if it has one.
+async function loadRowNumbers() {
+  const s = score;
+  const stored = await getStoredMap(s.pdfHash).catch(() => null);
+  if (s === score) rowNumbers = stored?.map ? flatten(stored.map) : null;
+}
+
+async function rowLabels(n) {
+  const systems = rowNumbers?.systems.filter((sy) => sy.page === n && sy.last >= sy.first);
+  if (!systems?.length) return [];
+  const pts = (await pdf.getPage(n)).getViewport({ scale: 1 }).width;
+  const k = renderWidth / pts;
+  return systems.map((sy) => {
+    const m = rowNumbers.measures[sy.first];
+    const el = document.createElement('span');
+    el.className = 'row-num';
+    el.textContent = m.n;
+    el.style.left = `${Math.max(12, m.x0 * k)}px`;
+    el.style.top = `${sy.y0 * k}px`;
+    return el;
+  });
+}
+
 function closeDocument() {
   flushSave();
+  rowNumbers = null;
   cache.clear();
   pdf?.destroy();
   pdf = null;
@@ -264,7 +292,11 @@ async function showPage(n) {
   }
   if (doc !== pdf || page !== n) return; // turned again while rendering
   const stage = $('.page-stage', root);
-  stage.replaceChildren(canvas);
+  const wrap = document.createElement('div');
+  wrap.className = 'page-wrap';
+  wrap.append(canvas, ...(await rowLabels(n)));
+  if (doc !== pdf || page !== n) return;
+  stage.replaceChildren(wrap);
   stage.scrollTop = 0;
 
   for (const k of cache.keys()) if (Math.abs(k - n) > KEEP_PAGES) cache.delete(k);

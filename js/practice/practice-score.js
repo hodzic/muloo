@@ -50,10 +50,12 @@ export function mountScorePanel(toolbarEl, stageEl, { onChange } = {}) {
       <button class="btn ps-loop" aria-pressed="false">Loop</button>
       <label class="ps-ramp" title="Tempo ramp: BPM added on each pass of the loop">+<input class="ps-ramp-step" type="number" min="0" max="20" step="1" inputmode="numeric" aria-label="BPM added per loop pass"> to <input class="ps-ramp-target" type="number" min="${BPM_MIN}" max="${BPM_MAX}" step="1" inputmode="numeric" aria-label="Target tempo"></label>
       <button class="btn ps-map">Map</button>
-      <button class="btn icon ps-full" aria-label="Full screen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
       <label class="ps-subset">Play <input class="ps-measures" type="text" inputmode="numeric" spellcheck="false" placeholder="all measures, or e.g. 13-24, 5-12" aria-label="Measures to play"></label>
     </div>
-    <div class="ps-status muted"></div>`;
+    <div class="ps-statusbar">
+      <div class="ps-status muted"></div>
+      <button class="btn icon ps-full" aria-label="Full screen" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${ENTER_FULL}"/></svg></button>
+    </div>`;
   $('.ps-score', root).addEventListener('change', (e) => loadScore(e.target.value || null));
   root.querySelectorAll('[data-rows]').forEach((b) => b.addEventListener('click', () => {
     settings.set('practice.rows', +b.dataset.rows);
@@ -73,6 +75,10 @@ export function mountScorePanel(toolbarEl, stageEl, { onChange } = {}) {
   $('.ps-home', root).addEventListener('click', toStart);
   $('.ps-measures', root).addEventListener('change', (e) => setSubset(e.target.value));
   document.addEventListener('keydown', onKey);
+  // Leaving the browser's full screen (back gesture, Esc) leaves ours too.
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement) setFullscreen(false);
+  });
   metronome.onChange(renderStatus);
 }
 
@@ -320,9 +326,17 @@ function toggleFullscreen() {
   setFullscreen(!document.body.classList.contains('practice-full'));
 }
 
+const ENTER_FULL = 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5';
+const EXIT_FULL = 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5';
+
 function setFullscreen(on) {
   if (document.body.classList.contains('practice-full') === on) return;
   document.body.classList.toggle('practice-full', on);
+  const b = root && $('.ps-full', root);
+  if (b) {
+    b.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
+    $('path', b).setAttribute('d', on ? EXIT_FULL : ENTER_FULL);
+  }
   if (on) document.documentElement.requestFullscreen?.().catch(() => {});
   else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
 }
@@ -345,6 +359,7 @@ function renderStatus() {
 
 function renderTools() {
   $('.ps-tools', root).hidden = !doc;
+  $('.ps-full', root).hidden = !doc;
   const rows = settings.get('practice.rows', 1);
   root.querySelectorAll('[data-rows]').forEach((b) => b.classList.toggle('selected', +b.dataset.rows === rows));
   const lb = $('.ps-loop', root);

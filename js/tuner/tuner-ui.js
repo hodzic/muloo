@@ -32,6 +32,7 @@ let shownMidi = null;
 let shownString = null; // preset string the reading is relative to, or null for a plain note
 let micPaused = false; // mic closed while a reference string rings
 let toneString = null; // index of the string whose reference pluck is ringing
+let focusString = null; // string picked by tapping its button: readings stay relative to it
 let toneToken = 0;
 let listening = false; // mic open and analysing
 
@@ -140,6 +141,7 @@ export function mount(el) {
     const b = e.target.closest('[data-string]');
     if (!b) return;
     const i = +b.dataset.string;
+    focusString = i;
     setTone(i); // every tap plucks, including the string that is ringing
   });
   renderSettings();
@@ -167,6 +169,7 @@ function renderSettings() {
   sel.value = INSTRUMENTS[instrument].presets[preset] ? preset : defaultPresetKey(instrument);
   $('.a4-value', root).textContent = `A4 = ${a4} Hz`;
   shownString = null; // string indices belong to the previous tuning
+  focusString = null;
   renderStrings();
   renderBeats();
 }
@@ -187,12 +190,13 @@ function renderMode() {
 
 function renderStrings() {
   const strings = presetStrings();
-  // Outlined: the string being heard right now (none while idle or while a
-  // reference rings). Green once it is in tune.
-  const heard = toneString == null && !isIdle() ? shownString : null;
-  const inTune = $('.tuner-display', root).classList.contains('in-tune');
+  // Outlined: the tapped string, else the string being heard right now
+  // (none while idle). Green once the reading is in tune with it.
+  const heard = !isIdle() && toneString == null ? shownString : null;
+  const target = focusString ?? heard;
+  const inTune = target != null && target === heard && $('.tuner-display', root).classList.contains('in-tune');
   $('.strings', root).innerHTML = strings.map((m, i) => `
-    <button class="btn string${i === heard ? ' heard' : ''}${i === heard && inTune ? ' in-tune' : ''}${i === toneString ? ' playing' : ''}" data-string="${i}"
+    <button class="btn string${i === target ? ' target' : ''}${i === target && inTune ? ' in-tune' : ''}${i === toneString ? ' playing' : ''}" data-string="${i}"
       aria-pressed="${i === toneString}" aria-label="Play ${noteName(m)}${noteOctave(m)}">${noteName(m)}<sub>${noteOctave(m)}</sub></button>`).join('');
 }
 
@@ -375,11 +379,27 @@ function loop(now) {
   update(median(history));
 }
 
+/**
+ * The reading relative to the tapped string (however far off, see
+ * target.js), or to the nearest string when none is tapped. Playing another
+ * string close to pitch (within 50 ¢) drops the tapped one.
+ */
+function readingFor(freq, strings, a4) {
+  const auto = chooseTarget(freq, strings, a4, focusString ?? shownString);
+  if (focusString == null || focusString >= strings.length) return auto;
+  if (auto.string != null && auto.string !== focusString && Math.abs(auto.cents) <= 50) {
+    focusString = null;
+    return auto;
+  }
+  const t = chooseTarget(freq, [strings[focusString]], a4, 0);
+  return t.string == null ? t : { ...t, string: focusString };
+}
+
 function update(freq) {
   const { a4 } = state();
   // Relative to the nearest string of the tuning, however far off; a plain
   // note when no string is near (see target.js).
-  const t = chooseTarget(freq, presetStrings(), a4, shownString);
+  const t = readingFor(freq, presetStrings(), a4);
   if (t.midi !== shownMidi || t.string !== shownString) {
     shownMidi = t.midi;
     shownString = t.string;
@@ -397,10 +417,12 @@ function update(freq) {
   $('.cents-value', root).textContent = `${shownCents >= 0 ? '+' : '−'}${abs.toFixed(abs >= 100 ? 0 : 1)} ¢`;
   $('.hz-value', root).textContent = `${freq.toFixed(2)} Hz`;
   const inTune = abs <= IN_TUNE_CENTS;
-  $('.tune-hint', root).textContent = inTune || t.string == null ? '' : shownCents < 0 ? '▲ Tune up' : '▼ Tune down';
+  $('.tune-hint', root).textContent = t.string == null
+    ? (focusString != null ? `Play ${noteName(presetStrings()[focusString])}${noteOctave(presetStrings()[focusString])}` : '')
+    : inTune ? '' : shownCents < 0 ? '▲ Tune up' : '▼ Tune down';
   $('.tuner-display', root).classList.toggle('in-tune', inTune);
   $('.tuner-display', root).classList.toggle('far', abs > 50);
-  $('.string.heard', root)?.classList.toggle('in-tune', inTune);
+  $('.string.target', root)?.classList.toggle('in-tune', inTune && t.string != null);
 }
 
 const isIdle = () => $('.tuner-display', root).classList.contains('idle');

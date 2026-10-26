@@ -11,7 +11,7 @@ const HELP = {
       <li>The big letter is the note heard. The needle shows how far off it is: left is flat (tighten), right is sharp (loosen).</li>
       <li>Turn the peg until the needle sits in the green zone and the panel turns green.</li>
     </ol>
-    <p>The string button of the string being heard is outlined, and turns green when it is in tune. Tap a string button to hear its reference note.</p>
+    <p>The outlined string button is the string the reading is for; it turns green when in tune. The tuner picks the nearest string by itself. Tap a string button to hear its reference note and keep the reading on that string, however far off it is (handy for big retunes). Playing another string close to pitch switches back.</p>
     <p>Change instrument, tuning or the A4 reference below the strings.</p>`,
   beats: `
     <h2>Beat tuning</h2>

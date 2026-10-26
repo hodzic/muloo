@@ -220,8 +220,8 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .strings { display: flex; gap: 6px; }
 .strings .string { flex: 1; padding: 0; font-size: 18px; }
 .strings .string sub { font-size: 11px; color: var(--muted); }
-.strings .string.heard { border-color: var(--accent); color: var(--accent); }
-.strings .string.heard.in-tune { border-color: var(--good); color: var(--good); }
+.strings .string.target { border-color: var(--accent); color: var(--accent); }
+.strings .string.target.in-tune { border-color: var(--good); color: var(--good); }
 .tuner-settings { display: flex; flex-direction: column; gap: 8px; }
 .a4 { display: flex; align-items: center; gap: 4px; }
 .a4-value { min-width: 96px; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; }

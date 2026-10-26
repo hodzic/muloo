@@ -75,10 +75,6 @@ export function mountScorePanel(toolbarEl, stageEl, { onChange } = {}) {
   $('.ps-home', root).addEventListener('click', toStart);
   $('.ps-measures', root).addEventListener('change', (e) => setSubset(e.target.value));
   document.addEventListener('keydown', onKey);
-  // Leaving the browser's full screen (back gesture, Esc) leaves ours too.
-  document.addEventListener('fullscreenchange', () => {
-    if (!document.fullscreenElement) setFullscreen(false);
-  });
   metronome.onChange(renderStatus);
 }
 
@@ -337,8 +333,6 @@ function setFullscreen(on) {
     b.setAttribute('aria-label', on ? 'Exit full screen' : 'Full screen');
     $('path', b).setAttribute('d', on ? EXIT_FULL : ENTER_FULL);
   }
-  if (on) document.documentElement.requestFullscreen?.().catch(() => {});
-  else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
 }
 
 function setStatus(text) {

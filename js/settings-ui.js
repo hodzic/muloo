@@ -4,7 +4,7 @@ import { listInputs, setInputDevice, setInputGainDb, looksBluetooth, getInput, o
 import { settings } from './storage/db.js';
 import { $, escapeHtml, formatBytes } from './util/dom.js';
 
-export const APP_VERSION = 'muloo-v55';
+export const APP_VERSION = 'muloo-v57';
 
 const METER_FLOOR_DB = -60;
 const CLIP_HOLD_MS = 2000;

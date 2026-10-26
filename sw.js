@@ -1,7 +1,7 @@
 // Service worker: cache-first, versioned (DESIGN.md §8).
 // Bump CACHE whenever a shell file changes so clients get the update toast.
 
-const CACHE = 'gp-v33';
+const CACHE = 'gp-v34';
 const INBOX = 'muloo-inbox';
 
 const SHELL = [
@@ -77,7 +77,9 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
+  // Bypass the HTTP cache: GitHub Pages lets browsers keep files for 10
+  // minutes, which would fill the new cache with the previous version.
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))));
 });
 
 self.addEventListener('activate', (event) => {

@@ -5,7 +5,7 @@
 import { metronome } from '../metronome/scheduler.js';
 import { createMiniMetronome } from '../metronome/metronome-ui.js';
 import { mountScorePanel, enterScorePanel, leaveScorePanel, hasScore, startFollow, scoreLink, useScore } from './practice-score.js';
-import { acquireInput, releaseInput, getInput, readLevel, looksBluetooth, onInputChange } from '../audio/input.js';
+import { getInput, readLevel, looksBluetooth, onInputChange } from '../audio/input.js';
 import { startRecording, stopRecording, isRecording, elapsedSec, onRecorderChange, MAX_SECONDS } from '../recorder/recorder.js';
 import { settings, isQuotaError } from '../storage/db.js';
 import { $, escapeHtml, toast, navigate } from '../util/dom.js';
@@ -22,7 +22,6 @@ let peakHoldAt = 0;
 let clipAt = -Infinity;
 let practiceStart = 0;
 let busy = false;
-let checkingLevel = false; // mic open only for the level meter (not recording)
 
 const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const pct = (db) => Math.max(0, Math.min(100, ((db - METER_FLOOR_DB) / -METER_FLOOR_DB) * 100));
@@ -45,9 +44,6 @@ export function mount(el) {
         <div class="mic-message" hidden></div>
         <p class="hint">Pick a score above to have it scroll along with the metronome.</p>
       </div>
-      <div class="input-row">
-        <button class="btn level-check" aria-pressed="false" title="Turn the mic on to see the input level before recording">Check level</button>
-      </div>
       <p class="warn bt-warning" hidden>Bluetooth mic: Android switches to low-quality call audio. Use the phone or a USB mic.</p>
       <div class="metro-mini-slot"></div>
       <div class="record-row">
@@ -64,7 +60,6 @@ export function mount(el) {
 
   $('.count-in-select', el).value = settings.get('recorder.countIn', 1);
   $('.count-in-select', el).addEventListener('change', (e) => settings.set('recorder.countIn', +e.target.value));
-  $('.level-check', el).addEventListener('click', () => (checkingLevel ? closeMic() : openMic()));
   $('.record', el).addEventListener('click', toggleRecording);
 
   metronome.onChange(() => {
@@ -95,8 +90,8 @@ export function enter({ scoreId } = {}) {
   active = true;
   if (scoreId) useScore(scoreId);
   else enterScorePanel();
-  // The mic stays off until you record or check the level: opening it takes
-  // audio focus on Android and interrupts other apps' playback.
+  // The mic stays off until you record (Settings has the level check): opening
+  // it takes audio focus on Android and interrupts other apps' playback.
   cancelAnimationFrame(raf);
   raf = requestAnimationFrame(loop);
 }
@@ -105,34 +100,6 @@ export function leave() {
   active = false;
   leaveScorePanel();
   cancelAnimationFrame(raf);
-  closeMic();
-}
-
-async function openMic() {
-  $('.mic-message', root).hidden = true;
-  checkingLevel = true;
-  renderLevelCheck();
-  try {
-    await acquireInput('practice');
-    if (!active || !checkingLevel) releaseInput('practice');
-  } catch (e) {
-    checkingLevel = false;
-    renderLevelCheck();
-    if (active) showMicMessage(micErrorText(e), 'Retry');
-  }
-}
-
-function closeMic() {
-  checkingLevel = false;
-  releaseInput('practice');
-  renderLevelCheck();
-}
-
-function renderLevelCheck() {
-  const b = $('.level-check', root);
-  b.classList.toggle('selected', checkingLevel);
-  b.setAttribute('aria-pressed', checkingLevel);
-  b.textContent = checkingLevel ? 'Mic on ■' : 'Check level';
 }
 
 function micErrorText(e) {
@@ -146,7 +113,7 @@ function micErrorText(e) {
 function showMicMessage(text, action) {
   const m = $('.mic-message', root);
   m.innerHTML = `<p>${escapeHtml(text)}</p><button class="btn primary">${escapeHtml(action)}</button>`;
-  $('button', m).onclick = openMic;
+  $('button', m).onclick = toggleRecording;
   m.hidden = false;
 }
 

@@ -178,6 +178,8 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .settings label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; }
 .settings p { margin: 0; font-size: 14px; }
 .settings h3 { font-size: 16px; margin-top: 8px; }
+.level-row { display: flex; gap: 8px; align-items: center; }
+.level-row .meter { flex: 1; }
 
 .placeholder { margin: auto 0; text-align: center; color: var(--muted); padding: 24px; }
 .placeholder h2 { color: var(--text); margin-bottom: 8px; }
@@ -304,7 +306,6 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .meter-clip { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; padding: 0 8px; font-size: 12px; font-weight: 800; color: var(--muted); background: var(--surface-2); }
 .meter.clipping .meter-clip { background: var(--bad); color: #fff; }
 .stage .mic-message { background: var(--surface-2); }
-.input-row { display: flex; gap: 8px; align-items: center; }
 .gain { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
 .gain output { min-width: 48px; font-variant-numeric: tabular-nums; color: var(--text); }
 .practice > .warn { margin: 0; font-size: 14px; }
@@ -460,7 +461,7 @@ dialog input[type="text"] { min-height: var(--tap); padding: 0 12px; border-radi
 .stage.compact .meter { height: 12px; }
 .stage.compact .rec-badge { position: static; }
 .stage.compact .count-in-overlay { font-size: 32px; border-radius: var(--radius); }
-body.practice-full .topbar, body.practice-full .tabbar, body.practice-full .input-row, body.practice-full .ps-tools, body.practice-full .ps-score, body.practice-full .bt-warning { display: none; }
+body.practice-full .topbar, body.practice-full .tabbar, body.practice-full .ps-tools, body.practice-full .ps-score, body.practice-full .bt-warning { display: none; }
 body.practice-full main { padding: 4px 8px; }
 body.practice-full .practice { gap: 6px; }
 

@@ -25,6 +25,7 @@ const HELP = `
   <h3>Order</h3>
   <ul>
     <li>The page shows each row's first measure number. Tap a measure to mark repeats, 1st and 2nd endings, D.S., D.C., Coda and Fine, or a change of time signature or tempo. The marks show on the page in orange, and the playing order is worked out from them.</li>
+    <li>Two segnos (𝄋1 and 𝄋2): mark them Segno 1 and Segno 2, and the jumps D.S. 1 and D.S. 2. Each D.S. is taken once. To Coda and Fine apply only after the last D.S. or D.C., so a measure with both D.S. 1 and To Coda jumps back the first time and goes to the Coda after D.S. 2. After a jump, repeats are played once.</li>
     <li>Or type the order below the page instead, e.g. <i>1-16, 1-15, 17-32</i>.</li>
   </ul>
   <h3>Details</h3>

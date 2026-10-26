@@ -100,24 +100,32 @@ export function playOrder(map, flat = flatten(map)) {
 
 /**
  * Work out the playing order (as measure numbers) from navigation markers.
- * markers: { [n]: { repeatStart, repeatEnd, ending: 1|2, segno, ds, dc,
- * toCoda, coda, fine } }. After a D.S./D.C. jump, repeats are not taken
- * again and the last ending is played.
+ * markers: { [n]: { repeatStart, repeatEnd, ending: 1|2, segno, segno2, ds,
+ * ds2, dc, toCoda, coda, fine } }. D.S. goes back to Segno (1), D.S. 2 to
+ * Segno 2; each D.S./D.C. is taken once. After a jump, repeats are not taken
+ * again and the last ending is played. To Coda and Fine count once every
+ * D.S./D.C. has been taken (so with D.S. 1 and D.S. 2, only after D.S. 2).
  */
 export function orderFromMarkers(numbers, markers = {}) {
   const N = numbers.length;
   const mk = (i) => markers[numbers[i]] ?? {};
+  const isJump = (m) => m.ds || m.ds2 || m.dc;
+  const jumpCount = numbers.filter((n) => isJump(markers[n] ?? {})).length;
+  const find = (key) => numbers.findIndex((n) => markers[n]?.[key]);
+  const taken = new Set(); // measure indices whose jump was taken
   const out = [];
-  let i = 0, pass = 1, repeatStart = 0, repeatEndAt = -1, jumped = false;
+  let i = 0, pass = 1, repeatStart = 0, repeatEndAt = -1;
   let guard = 0;
   while (i < N && guard++ < 10000) {
     const m = mk(i);
+    const jumped = taken.size > 0;
+    const last = jumped && taken.size === jumpCount; // all jumps used: To Coda / Fine apply
     if (m.repeatStart && pass === 1 && !jumped) repeatStart = i;
     if (m.ending && m.ending !== (jumped ? 2 : pass)) { i++; continue; }
     if (pass === 2 && i > repeatEndAt && !m.ending) pass = 1;
     out.push(numbers[i]);
-    if (jumped && m.fine) break;
-    if (jumped && m.toCoda) {
+    if (last && m.fine) break;
+    if (last && m.toCoda) {
       const coda = numbers.findIndex((n, k) => k > i && markers[n]?.coda);
       if (coda >= 0) { i = coda; continue; }
     }
@@ -125,11 +133,13 @@ export function orderFromMarkers(numbers, markers = {}) {
       if (pass === 1) { pass = 2; repeatEndAt = i; i = repeatStart; continue; }
       repeatStart = i + 1;
     }
-    if ((m.ds || m.dc) && !jumped) {
-      jumped = true;
+    if (isJump(m) && !taken.has(i)) {
+      taken.add(i);
       pass = 1;
-      const segno = numbers.findIndex((n) => markers[n]?.segno);
-      i = m.ds && segno >= 0 ? segno : 0;
+      const s1 = find('segno'), s2 = find('segno2');
+      if (m.dc) i = 0;
+      else if (m.ds2) i = s2 >= 0 ? s2 : Math.max(s1, 0);
+      else i = s1 >= 0 ? s1 : Math.max(s2, 0);
       continue;
     }
     i++;

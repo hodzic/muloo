@@ -1,9 +1,9 @@
-// Practice tab (DESIGN.md §1a): metronome bar, optional score, recording.
+// Practice tab (DESIGN.md §1a): mini metronome bar, optional score, recording.
 // With no score loaded the stage shows a large level meter and timer; with
 // one it shows the auto-scrolling score (practice-score.js).
 
 import { metronome } from '../metronome/scheduler.js';
-import { createMetronomeBar, createMiniMetronome } from '../metronome/metronome-ui.js';
+import { createMiniMetronome } from '../metronome/metronome-ui.js';
 import { mountScorePanel, enterScorePanel, leaveScorePanel, hasScore, startFollow, scoreLink, useScore } from './practice-score.js';
 import { acquireInput, releaseInput, getInput, readLevel, looksBluetooth, onInputChange } from '../audio/input.js';
 import { startRecording, stopRecording, isRecording, elapsedSec, onRecorderChange, MAX_SECONDS } from '../recorder/recorder.js';
@@ -49,8 +49,7 @@ export function mount(el) {
         <button class="btn level-check" aria-pressed="false" title="Turn the mic on to see the input level before recording">Check level</button>
       </div>
       <p class="warn bt-warning" hidden>Bluetooth mic: Android switches to low-quality call audio. Use the phone or a USB mic.</p>
-      <div class="metro-slot"></div>
-      <div class="metro-mini-slot" hidden></div>
+      <div class="metro-mini-slot"></div>
       <div class="record-row">
         <select class="count-in-select" aria-label="Count-in">
           <option value="0">No count-in</option>
@@ -60,8 +59,7 @@ export function mount(el) {
         <button class="btn record">● Record</button>
       </div>
     </div>`;
-  createMetronomeBar($('.metro-slot', el), { flashTarget: $('.stage', el) });
-  createMiniMetronome($('.metro-mini-slot', el));
+  createMiniMetronome($('.metro-mini-slot', el), { flashTarget: $('.stage', el) });
   mountScorePanel($('.score-toolbar', el), $('.score-stage', el), { onChange: renderScoreMode });
 
   $('.count-in-select', el).value = settings.get('recorder.countIn', 1);
@@ -91,8 +89,6 @@ function renderScoreMode() {
   const score = hasScore();
   $('.score-stage', root).hidden = !score;
   $('.stage', root).classList.toggle('compact', score);
-  $('.metro-slot', root).hidden = score;
-  $('.metro-mini-slot', root).hidden = !score;
 }
 
 export function enter({ scoreId } = {}) {

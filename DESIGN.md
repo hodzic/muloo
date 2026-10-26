@@ -368,8 +368,9 @@ On first launch, call `navigator.storage.persist()`.
 
 ## 7. UI
 
-- **Navigation:** a bottom tab bar with Tune, Practice, Scores, and Recordings.
-  - **Practice** combines the metronome bar, an optional score, and recording (see 1a). A standalone metronome is just Practice without recording.
+- **Navigation:** a bottom tab bar with Tune, Metronome, Practice, Scores, and Recordings.
+  - **Metronome** holds the full metronome bar (tempo, time signature, subdivision, click mode, volume) and a large beat count.
+  - **Practice** combines the mini metronome bar, an optional score, and recording (see 1a).
   - **Recordings** is the library; the player opens from it.
   - The app reopens on the last-used tab.
 - **Look:** dark theme by default and high contrast.

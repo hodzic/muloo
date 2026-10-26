@@ -3,6 +3,7 @@
 import { settings, requestPersistence } from './storage/db.js';
 import { initSettings } from './settings-ui.js';
 import * as tuner from './tuner/tuner-ui.js';
+import * as metro from './metronome/metronome-view.js';
 import * as practice from './practice/practice-ui.js';
 import * as library from './library/library-ui.js';
 import * as scores from './scores/scores-ui.js';
@@ -15,6 +16,7 @@ import { $, $$, toast } from './util/dom.js';
 
 const VIEWS = {
   tune: { title: 'Tune', module: tuner },
+  metronome: { title: 'Metronome', module: metro },
   practice: { title: 'Practice', module: practice },
   scores: { title: 'Scores', module: scores },
   recordings: { title: 'Recordings', module: library },

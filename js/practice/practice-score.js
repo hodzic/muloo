@@ -48,8 +48,8 @@ export function mountScorePanel(toolbarEl, stageEl, { onChange } = {}) {
       </div>
       <button class="btn icon ps-home" aria-label="Back to the first measure" title="Back to the first measure"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M18 6l-8 6 8 6z"/></svg></button>
       <button class="btn ps-loop" aria-pressed="false">Loop</button>
-      <label class="ps-ramp" title="Tempo ramp: BPM added on each pass of the loop">+<input class="ps-ramp-step" type="number" min="0" max="20" step="1" inputmode="numeric" aria-label="BPM added per loop pass"> to <input class="ps-ramp-target" type="number" min="${BPM_MIN}" max="${BPM_MAX}" step="1" inputmode="numeric" aria-label="Target tempo"></label>
       <button class="btn ps-map">Map</button>
+      <label class="ps-ramp">Speed up <input class="ps-ramp-step" type="number" min="0" max="20" step="1" inputmode="numeric" aria-label="BPM added per loop pass"> BPM each loop, up to <input class="ps-ramp-target" type="number" min="${BPM_MIN}" max="${BPM_MAX}" step="1" inputmode="numeric" placeholder="any" aria-label="Target tempo"> BPM</label>
       <label class="ps-subset">Play <input class="ps-measures" type="text" inputmode="numeric" spellcheck="false" placeholder="all measures, or e.g. 13-24, 5-12" aria-label="Measures to play"></label>
     </div>
     <div class="ps-statusbar">

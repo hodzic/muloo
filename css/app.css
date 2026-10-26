@@ -466,7 +466,7 @@ dialog input[type="text"] { min-height: var(--tap); padding: 0 12px; border-radi
 .ps-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .ps-tools .btn { padding: 0 12px; }
 .ps-rows .btn { padding: 0 10px; }
-.ps-ramp { display: flex; align-items: center; gap: 4px; font-size: 14px; color: var(--muted); }
+.ps-ramp { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 14px; color: var(--muted); }
 .ps-ramp input { width: 56px; min-height: var(--tap); padding: 0 6px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; }
 .ps-statusbar { display: flex; align-items: center; gap: 8px; }
 .ps-status { flex: 1; font-size: 13px; min-height: 1.3em; }

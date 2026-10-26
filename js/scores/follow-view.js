@@ -10,6 +10,9 @@ const LONG_PRESS_MS = 550;
 // In portrait, zooming to the full height would show less than a measure:
 // keep at least this share of a row's width on screen.
 const MIN_VISIBLE_ROW = 0.4;
+// Rows drawn ahead of the playhead, beyond the ones on screen, so a row is
+// ready before it glides in (drawing one can take longer than a beat).
+const PREFETCH_ROWS = 2;
 
 export class FollowView {
   /**
@@ -84,10 +87,10 @@ export class FollowView {
   }
 
   /** Systems to show: the current one, then the next ones in playing order. */
-  visibleSystems() {
+  visibleSystems(count = this.rows) {
     const pos = this.pos?.playPos ?? 0;
     const out = [];
-    for (let p = pos; p < this.indices.length && out.length < this.rows; p++) {
+    for (let p = pos; p < this.indices.length && out.length < count; p++) {
       const k = this.flat.measures[this.indices[p]].system;
       if (out[out.length - 1] !== k) out.push(k);
     }
@@ -99,13 +102,19 @@ export class FollowView {
     const key = `${k}@${this.rowH}`;
     if (!this.strips.has(key)) {
       this.strips.set(key, this.renderStrip(k).catch((e) => { this.strips.delete(key); throw e; }));
-      // Keep memory bounded: drop strips rendered for other sizes or far-away systems.
-      for (const other of this.strips.keys()) {
-        const [ok, oh] = other.split('@').map(Number);
-        if (oh !== this.rowH || Math.abs(ok - k) > 4) this.strips.delete(other);
-      }
     }
     return this.strips.get(key);
+  }
+
+  /** Draw the next rows in playing order ahead of time; drop strips no longer needed. */
+  prefetch() {
+    const wanted = this.visibleSystems(this.rows + PREFETCH_ROWS);
+    const keep = new Set(wanted.map((k) => `${k}@${this.rowH}`));
+    // Rows on screen hold their canvas, so dropping their cache entry is safe.
+    for (const key of this.strips.keys()) if (!keep.has(key)) this.strips.delete(key);
+    // One after another, so drawing ahead doesn't compete with the row coming up next.
+    let chain = Promise.resolve();
+    for (const k of wanted) chain = chain.then(() => this.strip(k)).catch(() => {});
   }
 
   async renderStrip(k) {
@@ -145,7 +154,10 @@ export class FollowView {
     }
     const systems = this.visibleSystems();
     const changed = force || systems.join() !== this.slots.map((s) => s.system).join();
-    if (changed) this.rebuildSlots(systems, !force);
+    if (changed) {
+      this.rebuildSlots(systems, !force);
+      this.prefetch();
+    }
     const cur = this.slots[0];
     if (!cur?.ready) return;
     const m = this.pos ? this.flat.measures[this.indices[this.pos.playPos]] : this.flat.measures[this.flat.systems[cur.system].first];

@@ -58,7 +58,7 @@ export function mount(el) {
         <button class="btn icon v-zoom-in" aria-label="Zoom in"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 4a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13zM15.5 15.5L20 20M7.5 10.5h6M10.5 7.5v6"/></svg></button>
         <button class="btn icon v-full" aria-label="Full screen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
       </div>
-      <div class="page-stage" tabindex="0" aria-label="Score page. Tap left or right to turn."></div>
+      <div class="page-stage" tabindex="0" aria-label="Score page. Tap left or right to turn; two fingers move and zoom."></div>
     </div>
     <div class="map-editor-host" hidden></div>`;
 
@@ -75,16 +75,23 @@ export function mount(el) {
   $('.v-full', el).addEventListener('click', () => setImmersive(!document.body.classList.contains('immersive')));
 
   const stage = $('.page-stage', el);
-  stage.addEventListener('pointerdown', (e) => { pointer = { x: e.clientX, y: e.clientY, id: e.pointerId }; });
+  // One finger turns pages (swipe or tap); two fingers move and zoom the page,
+  // as in the map editor.
+  stage.addEventListener('pointerdown', (e) => {
+    pointer = e.isPrimary ? { x: e.clientX, y: e.clientY, id: e.pointerId } : null;
+  });
   stage.addEventListener('pointercancel', () => { pointer = null; });
   stage.addEventListener('pointerup', onStagePointerUp);
-  // Pinch to zoom. Touch events, because the browser takes over pointers for panning.
   stage.addEventListener('touchstart', (e) => {
-    if (e.touches.length === 2) { pinch = { dist: touchDist(e.touches), ratio: 1 }; pointer = null; }
+    if (e.touches.length === 2) { pinch = { dist: touchDist(e.touches), ratio: 1, mid: touchMid(e.touches) }; pointer = null; }
   }, { passive: true });
   stage.addEventListener('touchmove', (e) => {
     if (!pinch || e.touches.length !== 2) return;
     e.preventDefault();
+    const mid = touchMid(e.touches);
+    stage.scrollLeft -= mid.x - pinch.mid.x;
+    stage.scrollTop -= mid.y - pinch.mid.y;
+    pinch.mid = mid;
     pinch.ratio = touchDist(e.touches) / pinch.dist;
   }, { passive: false });
   stage.addEventListener('touchend', (e) => {
@@ -284,6 +291,7 @@ function stageWidth() {
 }
 
 const touchDist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+const touchMid = (t) => ({ x: (t[0].clientX + t[1].clientX) / 2, y: (t[0].clientY + t[1].clientY) / 2 });
 
 function stepZoom(d) {
   const i = ZOOMS.indexOf(zoom) + d;
@@ -305,7 +313,6 @@ async function setZoom(z) {
 function renderZoom() {
   $('.v-zoom-out', root).disabled = zoom === ZOOMS[0];
   $('.v-zoom-in', root).disabled = zoom === ZOOMS.at(-1);
-  $('.page-stage', root).classList.toggle('zoomed', zoom > 1);
 }
 
 function getCanvas(n) {
@@ -370,8 +377,7 @@ function onStagePointerUp(e) {
   if (!pointer || pointer.id !== e.pointerId) return;
   const dx = e.clientX - pointer.x, dy = e.clientY - pointer.y;
   pointer = null;
-  // Zoomed in, a sideways drag moves the page instead of turning it.
-  if (zoom === 1 && Math.abs(dx) > SWIPE_PX && Math.abs(dx) > Math.abs(dy) * 1.5) {
+  if (Math.abs(dx) > SWIPE_PX && Math.abs(dx) > Math.abs(dy) * 1.5) {
     turn(dx < 0 ? 1 : -1);
   } else if (Math.abs(dx) < TAP_PX && Math.abs(dy) < TAP_PX) {
     const r = e.currentTarget.getBoundingClientRect();

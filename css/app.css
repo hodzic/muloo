@@ -375,6 +375,8 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .score-list .placeholder { margin-top: 20vh; }
 
 .score-viewer { flex: 1; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+/* While a score is open the tab is exactly the screen's height and the page scrolls inside it. */
+#view-scores:has(> .score-viewer:not([hidden])) { min-height: 0; }
 .viewer-head { display: flex; align-items: center; gap: 4px; margin-left: -12px; }
 .viewer-head svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .v-title { flex: 1; min-width: 0; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -383,16 +385,14 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
   flex: 1;
   min-height: 0;
   height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: auto;
   background: #fff;
   border-radius: 4px;
-  touch-action: pan-y;
+  touch-action: none; /* two fingers scroll (see scores-ui.js) */
   overscroll-behavior: contain;
   outline: none;
   user-select: none;
 }
-.page-stage.zoomed { overflow-x: auto; touch-action: pan-x pan-y; }
 .page-stage canvas { display: block; }
 .page-wrap { position: relative; }
 /* First measure number of a row, at the row's top-left like a printed score. */

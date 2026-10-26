@@ -10,7 +10,7 @@ import { metronome, BPM_MIN, BPM_MAX } from '../metronome/scheduler.js';
 import { recordBar } from '../recorder/recorder.js';
 import { listScores, getScore, openPdf } from '../scores/scores.js';
 import { loadMap } from '../scores/map-store.js';
-import { flatten, playOrder } from '../scores/score-map.js';
+import { flatten, playOrder, parseOrder } from '../scores/score-map.js';
 import { FollowView } from '../scores/follow-view.js';
 import { FollowController } from '../scores/follow.js';
 import { settings } from '../storage/db.js';
@@ -50,6 +50,7 @@ export function mountScorePanel(toolbarEl, stageEl, { onChange } = {}) {
       <label class="ps-ramp" title="Tempo ramp: BPM added on each pass of the loop">+<input class="ps-ramp-step" type="number" min="0" max="20" step="1" inputmode="numeric" aria-label="BPM added per loop pass"> to <input class="ps-ramp-target" type="number" min="${BPM_MIN}" max="${BPM_MAX}" step="1" inputmode="numeric" aria-label="Target tempo"></label>
       <button class="btn ps-map">Map</button>
       <button class="btn icon ps-full" aria-label="Full screen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+      <label class="ps-subset">Play <input class="ps-measures" type="text" inputmode="numeric" spellcheck="false" placeholder="all measures, or e.g. 13-24, 5-12" aria-label="Measures to play"></label>
     </div>
     <div class="ps-status muted"></div>`;
   $('.ps-score', root).addEventListener('change', (e) => loadScore(e.target.value || null));
@@ -68,6 +69,7 @@ export function mountScorePanel(toolbarEl, stageEl, { onChange } = {}) {
   $('.ps-ramp-target', root).addEventListener('change', (e) => settings.set('practice.rampTarget', +e.target.value || null));
   $('.ps-map', root).addEventListener('click', () => doc && navigate('scores', { scoreId: doc.score.id, editMap: true }));
   $('.ps-full', root).addEventListener('click', () => toggleFullscreen());
+  $('.ps-measures', root).addEventListener('change', (e) => setSubset(e.target.value));
   document.addEventListener('keydown', onKey);
   metronome.onChange(renderStatus);
 }
@@ -149,8 +151,42 @@ async function reloadMapIfChanged() {
 function buildView() {
   doc.flat = flatten(doc.map);
   const { indices, missing } = playOrder(doc.map, doc.flat);
-  doc.indices = indices.length ? indices : doc.flat.measures.map((m) => m.i);
+  doc.fullIndices = indices.length ? indices : doc.flat.measures.map((m) => m.i);
   if (missing.length) toast(`Playing order mentions measures not in the map: ${missing.slice(0, 5).join(', ')}`);
+  doc.indices = subsetIndices(settings.get(subsetKey(), '')) ?? doc.fullIndices;
+  makeView();
+}
+
+// Measures to play: a list of measures and ranges in place of the whole
+// playing order, kept per score.
+const subsetKey = () => `practice.measures.${doc.score.id}`;
+
+/** Measure indices for "13-24, 5-12", or null for all (empty) or on an error (with a toast). */
+function subsetIndices(text) {
+  if (!text.trim()) return null;
+  try {
+    const nums = parseOrder(text);
+    const missing = nums.filter((n) => !doc.flat.byNumber.has(n));
+    if (missing.length) throw new Error(`no measure ${missing.slice(0, 3).join(', ')} in the map`);
+    return nums.map((n) => doc.flat.byNumber.get(n));
+  } catch (e) {
+    toast(`Measures to play: ${e.message}`);
+    return null;
+  }
+}
+
+function setSubset(text) {
+  if (!doc) return;
+  const indices = subsetIndices(text);
+  if (text.trim() && !indices) return;
+  settings.set(subsetKey(), text.trim());
+  ctrl?.stop();
+  doc.indices = indices ?? doc.fullIndices;
+  makeView();
+  renderTools();
+}
+
+function makeView() {
   startPos = 0;
   loop = null;
   loopMode = false;
@@ -305,6 +341,8 @@ function renderTools() {
   $('.ps-ramp', root).hidden = !loop;
   $('.ps-ramp-step', root).value = settings.get('practice.rampStep', 0);
   $('.ps-ramp-target', root).value = settings.get('practice.rampTarget', '') ?? '';
+  const measures = $('.ps-measures', root);
+  if (doc && document.activeElement !== measures) measures.value = settings.get(subsetKey(), '');
   renderStatus();
 }
 

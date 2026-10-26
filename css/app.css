@@ -468,6 +468,8 @@ dialog input[type="text"] { min-height: var(--tap); padding: 0 12px; border-radi
 .ps-ramp { display: flex; align-items: center; gap: 4px; font-size: 14px; color: var(--muted); }
 .ps-ramp input { width: 56px; min-height: var(--tap); padding: 0 6px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; }
 .ps-status { font-size: 13px; min-height: 1.3em; }
+.ps-subset { flex: 1 1 100%; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }
+.ps-subset input { flex: 1; min-width: 0; min-height: 40px; padding: 0 10px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; }
 .score-stage { flex: 3; min-height: 160px; }
 .stage.compact { flex: none; min-height: 0; flex-direction: row; justify-content: flex-start; gap: 12px; padding: 6px 12px; border-radius: var(--radius); }
 .stage.compact .stage-timer { font-size: 22px; }

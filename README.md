@@ -19,7 +19,7 @@ A practice-session PWA for guitar and ukulele: tuner, metronome, PDF score viewe
 ## Run locally
 
 ```sh
-python3 -m http.server 8000   # then open http://localhost:8000
+npm run serve   # then open http://localhost:8000/muloo/ (the manifest uses /muloo/ paths, as on GitHub Pages)
 ```
 
 The mic needs a secure context: `localhost` or HTTPS (GitHub Pages).
@@ -49,4 +49,4 @@ Auto-scroll needs a score map (rows, measures, playing order). MuLoo detects one
 
 ## Deploying
 
-Serve the repo root from GitHub Pages (Settings → Pages → deploy from branch). All paths are relative, so it works under `/muloo/`. Bump `CACHE` in `sw.js` on every release so installed apps show the update toast.
+Serve the repo root from GitHub Pages (Settings → Pages → deploy from branch). The app's paths are relative; the manifest's are absolute `/muloo/` paths, like the other apps on hodzic.github.io. Bump `CACHE` in `sw.js` on every release so installed apps show the update toast.

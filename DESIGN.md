@@ -354,7 +354,7 @@ Each score has a **score map**: the location of every row of music (system) and 
 - **Export WAV:** a separate action for full-quality export.
 - **Storage display:** settings show storage used and available, via `navigator.storage.estimate()`.
 
-## 6. Data model (IndexedDB, db `guitar-practice`, v1)
+## 6. Data model (IndexedDB, db `muloo`, v1)
 
 | Store | Key | Fields |
 |---|---|---|
@@ -387,7 +387,7 @@ On first launch, call `navigator.storage.persist()`.
   - `share_target` (POST with multipart form data) and `file_handlers` for `application/pdf`, so a PDF can be sent to MuLoo from the Files app or a browser (W4).
 - **Service worker:**
   - Cache-first for the app shell and `/vendor/`.
-  - The cache name is versioned (`gp-v1`, …), and old caches are deleted on activate.
+  - The cache name is versioned (`muloo-v36`, …; `gp-vNN` before v36), and old caches are deleted on activate.
 - **Updates:** show an "Update available — reload" toast when a new service worker is waiting.
 
 ## 9. Testing

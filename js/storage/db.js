@@ -1,6 +1,6 @@
 // IndexedDB wrapper. Schema: DESIGN.md §6.
 
-const DB_NAME = 'guitar-practice';
+const DB_NAME = 'muloo';
 const DB_VERSION = 1;
 
 let dbPromise = null;

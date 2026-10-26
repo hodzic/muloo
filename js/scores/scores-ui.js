@@ -102,9 +102,6 @@ export function mount(el) {
     if (best !== zoom) setZoom(best);
   });
   document.addEventListener('keydown', onKey);
-  document.addEventListener('fullscreenchange', () => {
-    if (!document.fullscreenElement) document.body.classList.remove('immersive');
-  });
   addEventListener('resize', onResize);
 }
 
@@ -414,8 +411,6 @@ function setImmersive(on) {
   const body = document.body;
   if (body.classList.contains('immersive') === on) return;
   body.classList.toggle('immersive', on);
-  if (on) document.documentElement.requestFullscreen?.().catch(() => {});
-  else if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   if (pdf) requestAnimationFrame(() => showPage(page));
 }
 

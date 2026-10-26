@@ -9,6 +9,7 @@ import { getInput, readLevel, looksBluetooth, onInputChange } from '../audio/inp
 import { startRecording, stopRecording, isRecording, elapsedSec, onRecorderChange, MAX_SECONDS } from '../recorder/recorder.js';
 import { settings, isQuotaError } from '../storage/db.js';
 import { $, escapeHtml, toast, navigate } from '../util/dom.js';
+import { openTabHelp } from '../util/tab-help.js';
 
 const METER_FLOOR_DB = -60;
 const CLIP_HOLD_MS = 2000;
@@ -95,6 +96,8 @@ export function enter({ scoreId } = {}) {
   cancelAnimationFrame(raf);
   raf = requestAnimationFrame(loop);
 }
+
+export const showHelp = () => openTabHelp('practice');
 
 export function leave() {
   active = false;

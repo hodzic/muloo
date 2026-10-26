@@ -7,6 +7,7 @@ import { openPlayer, closePlayer, pausePlayer } from '../player/player.js';
 import { openEditor, closeEditor, pauseEditor } from '../editor/editor.js';
 import { openShareDialog } from './dialogs.js';
 import { $, escapeHtml, formatBytes } from '../util/dom.js';
+import { openTabHelp } from '../util/tab-help.js';
 
 let root;
 let active = false;
@@ -28,6 +29,8 @@ export function enter({ recordingId, open = false } = {}) {
   if (recordingId && open) showPlayer(recordingId);
   else if ($('.player-host', root).hidden) render();
 }
+
+export const showHelp = () => openTabHelp('recordings');
 
 export function leave() {
   active = false;

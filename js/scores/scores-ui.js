@@ -7,6 +7,7 @@ import { listScores, getScore, saveScore, deleteScore, importPdf, openPdf, rende
 import { loadMap, getStoredMap, readEmbeddedMap } from './map-store.js';
 import { flatten } from './score-map.js';
 import { openMapEditor, closeMapEditor, isMapEditorOpen, openMapHelp } from './map-editor.js';
+import { openTabHelp } from '../util/tab-help.js';
 import { isQuotaError } from '../storage/db.js';
 import { holdWakeLock, releaseWakeLock } from '../util/wakelock.js';
 import { $, escapeHtml, toast } from '../util/dom.js';
@@ -415,5 +416,4 @@ function setImmersive(on) {
 }
 
 // The ? button shows the map editor's how-to while it's open.
-export const hasHelp = isMapEditorOpen;
-export const showHelp = () => isMapEditorOpen() && openMapHelp();
+export const showHelp = () => (isMapEditorOpen() ? openMapHelp() : openTabHelp('scores'));

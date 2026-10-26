@@ -3,6 +3,7 @@
 import { metronome } from './scheduler.js';
 import { createMetronomeBar } from './metronome-ui.js';
 import { $ } from '../util/dom.js';
+import { openTabHelp } from '../util/tab-help.js';
 
 export function mount(el) {
   el.innerHTML = `
@@ -29,3 +30,4 @@ export function mount(el) {
 // The metronome keeps running on other tabs; their mini bars stop it.
 export function enter() {}
 export function leave() {}
+export const showHelp = () => openTabHelp('metronome');

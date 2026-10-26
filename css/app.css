@@ -458,7 +458,7 @@ dialog input[type="text"] { min-height: var(--tap); padding: 0 12px; border-radi
 .follow-loop { position: absolute; top: 0; height: 6px; background: rgb(61 220 132 / 0.8); pointer-events: none; }
 .follow-playhead { position: absolute; top: 0; left: 0; width: 3px; margin-left: -1px; background: var(--accent); pointer-events: none; }
 .follow-cue { position: absolute; top: 8px; right: 8px; padding: 4px 10px; border-radius: 8px; background: rgb(0 0 0 / 0.75); color: #fff; font-weight: 700; font-size: 18px; pointer-events: none; }
-.follow-measure { position: absolute; top: 8px; left: 8px; padding: 2px 10px; border-radius: 8px; background: rgb(0 0 0 / 0.7); color: #fff; font-weight: 700; font-size: 20px; font-variant-numeric: tabular-nums; pointer-events: none; z-index: 2; }
+.follow-measure { position: absolute; bottom: 8px; right: 8px; padding: 2px 10px; border-radius: 8px; background: rgb(0 0 0 / 0.7); color: #fff; font-weight: 700; font-size: 20px; font-variant-numeric: tabular-nums; pointer-events: none; z-index: 2; }
 .follow-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #555; }
 
 /* Practice with a score */

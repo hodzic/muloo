@@ -1,7 +1,7 @@
 // Service worker: cache-first, versioned (DESIGN.md §8).
 // Bump CACHE whenever a shell file changes so clients get the update toast.
 
-const CACHE = 'muloo-v57';
+const CACHE = 'muloo-v58';
 const INBOX = 'muloo-inbox';
 
 const SHELL = [

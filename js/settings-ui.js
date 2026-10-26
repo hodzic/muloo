@@ -1,12 +1,19 @@
-// Settings dialog: input device, input gain, storage use.
+// Settings dialog: input device, input gain with a level check, storage use.
 
-import { listInputs, setInputDevice, setInputGainDb, looksBluetooth, getInput, onInputChange, GAIN_MAX_DB } from './audio/input.js';
+import { listInputs, setInputDevice, setInputGainDb, looksBluetooth, getInput, onInputChange, acquireInput, releaseInput, readLevel, GAIN_MAX_DB } from './audio/input.js';
 import { settings } from './storage/db.js';
 import { $, escapeHtml, formatBytes } from './util/dom.js';
 
-export const APP_VERSION = 'muloo-v38';
+export const APP_VERSION = 'muloo-v39';
+
+const METER_FLOOR_DB = -60;
+const CLIP_HOLD_MS = 2000;
 
 let dialog;
+let checking = false;
+let raf = 0;
+let levelBuf = null;
+let clipAt = -Infinity;
 
 export function initSettings(button, dlg) {
   dialog = dlg;
@@ -20,7 +27,15 @@ export function initSettings(button, dlg) {
       <label>Input gain <output class="gain-out"></output>
         <input class="input-gain" type="range" min="0" max="${GAIN_MAX_DB}" step="1">
       </label>
-      <p class="muted">Raise the gain for low-output USB mics.</p>
+      <p class="muted">Raise the gain for low-output USB mics. Play your loudest: the level should stay out of the red.</p>
+      <div class="level-row">
+        <button class="btn level-check" type="button" aria-pressed="false">Check level</button>
+        <div class="meter off" aria-hidden="true">
+          <div class="meter-fill"></div>
+          <div class="meter-clip">CLIP</div>
+        </div>
+      </div>
+      <p class="warn mic-error" hidden></p>
       <h3>Storage</h3>
       <p class="storage muted">…</p>
       <p class="muted">MuLoo ${APP_VERSION} · all data stays on this device.</p>
@@ -42,6 +57,8 @@ export function initSettings(button, dlg) {
     $('.gain-out', dialog).textContent = `+${e.target.value} dB`;
   });
   onInputChange(() => { if (dialog.open) renderDevices(); });
+  $('.level-check', dialog).addEventListener('click', () => (checking ? stopCheck() : startCheck()));
+  dialog.addEventListener('close', stopCheck);
 
   button.addEventListener('click', () => {
     const g = settings.get('inputGainDb', 0);
@@ -66,6 +83,59 @@ async function renderDevices() {
   sel.value = devices.some((d) => d.deviceId === chosen) ? chosen : '';
   const label = getInput()?.label ?? devices.find((d) => d.deviceId === chosen)?.label ?? '';
   $('.bt-warning', dialog).hidden = !looksBluetooth(label);
+}
+
+// The mic stays off until asked: opening it interrupts other apps' playback on Android.
+async function startCheck() {
+  checking = true;
+  $('.mic-error', dialog).hidden = true;
+  renderCheck();
+  try {
+    await acquireInput('settings');
+    if (!checking) releaseInput('settings');
+  } catch (e) {
+    checking = false;
+    renderCheck();
+    const m = $('.mic-error', dialog);
+    m.textContent = e.name === 'NotAllowedError' || e.name === 'SecurityError'
+      ? 'MuLoo needs microphone access. Allow it in the browser’s site settings.'
+      : `Could not open the microphone (${e.name || e.message}).`;
+    m.hidden = false;
+  }
+}
+
+function stopCheck() {
+  if (!checking) return;
+  checking = false;
+  releaseInput('settings');
+  renderCheck();
+}
+
+function renderCheck() {
+  const b = $('.level-check', dialog);
+  b.classList.toggle('selected', checking);
+  b.setAttribute('aria-pressed', checking);
+  b.textContent = checking ? 'Mic on ■' : 'Check level';
+  cancelAnimationFrame(raf);
+  if (checking) raf = requestAnimationFrame(meterLoop);
+  else {
+    $('.meter', dialog).classList.add('off');
+    $('.meter-fill', dialog).style.width = '0%';
+  }
+}
+
+function meterLoop(now) {
+  raf = requestAnimationFrame(meterLoop);
+  const input = getInput();
+  const meter = $('.meter', dialog);
+  meter.classList.toggle('off', !input);
+  if (!input) return;
+  levelBuf ??= new Float32Array(2048);
+  const { peakDb, clipped } = readLevel(input, levelBuf);
+  if (clipped) clipAt = now;
+  const pct = Math.max(0, Math.min(100, ((peakDb - METER_FLOOR_DB) / -METER_FLOOR_DB) * 100));
+  $('.meter-fill', dialog).style.width = `${pct}%`;
+  meter.classList.toggle('clipping', now - clipAt < CLIP_HOLD_MS);
 }
 
 // Updates normally show as a toast; this is the reliable way to get one.

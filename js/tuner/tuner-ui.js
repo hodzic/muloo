@@ -5,6 +5,7 @@ import { INSTRUMENTS, getPreset, defaultPresetKey } from './presets.js';
 import { mountBeats, renderBeats, startBeats, stopBeats } from './beats-ui.js';
 import { pluck, stopTone } from './reference-tone.js';
 import { chooseTarget } from './target.js';
+import { openTunerHelp } from './tuner-help.js';
 import { acquireInput, releaseInput, getInput, gainToDb } from '../audio/input.js';
 import { canStartAudio } from '../audio/context.js';
 import { settings } from '../storage/db.js';
@@ -49,6 +50,7 @@ export function mount(el) {
           <button class="btn" data-tuner-mode="standard" role="radio">Standard</button>
           <button class="btn" data-tuner-mode="beats" role="radio">Beats</button>
         </div>
+        <button class="btn round help-btn" aria-label="How to use the tuner">?</button>
       </div>
       <div class="beats-panel" hidden></div>
       <div class="tuner-display listen-toggle idle" role="button" tabindex="0" aria-pressed="false">
@@ -88,6 +90,7 @@ export function mount(el) {
     </div>`;
 
   mountBeats($('.beats-panel', el));
+  $('.help-btn', el).addEventListener('click', () => openTunerHelp(settings.get('tuner.mode', 'standard')));
   // The whole display (gauge, or the beat display in Beats mode) toggles the mic.
   const beatDisplay = $('.beat-display', el);
   beatDisplay.classList.add('listen-toggle');
@@ -184,9 +187,12 @@ function renderMode() {
 
 function renderStrings() {
   const strings = presetStrings();
-  const target = toneString ?? shownString;
+  // Outlined: the string being heard right now (none while idle or while a
+  // reference rings). Green once it is in tune.
+  const heard = toneString == null && !isIdle() ? shownString : null;
+  const inTune = $('.tuner-display', root).classList.contains('in-tune');
   $('.strings', root).innerHTML = strings.map((m, i) => `
-    <button class="btn string${i === target ? ' target' : ''}${i === toneString ? ' playing' : ''}" data-string="${i}"
+    <button class="btn string${i === heard ? ' heard' : ''}${i === heard && inTune ? ' in-tune' : ''}${i === toneString ? ' playing' : ''}" data-string="${i}"
       aria-pressed="${i === toneString}" aria-label="Play ${noteName(m)}${noteOctave(m)}">${noteName(m)}<sub>${noteOctave(m)}</sub></button>`).join('');
 }
 
@@ -394,15 +400,19 @@ function update(freq) {
   $('.tune-hint', root).textContent = inTune || t.string == null ? '' : shownCents < 0 ? '▲ Tune up' : '▼ Tune down';
   $('.tuner-display', root).classList.toggle('in-tune', inTune);
   $('.tuner-display', root).classList.toggle('far', abs > 50);
+  $('.string.heard', root)?.classList.toggle('in-tune', inTune);
 }
+
+const isIdle = () => $('.tuner-display', root).classList.contains('idle');
 
 function setIdle(idle) {
   const d = $('.tuner-display', root);
-  if (d.classList.contains('idle') === idle) return;
+  if (isIdle() === idle) return;
   d.classList.toggle('idle', idle);
   if (idle) {
     d.classList.remove('in-tune', 'far');
     $('.tune-hint', root).textContent = '';
     $('.needle', root).style.transform = 'rotate(0deg)';
   }
+  renderStrings();
 }

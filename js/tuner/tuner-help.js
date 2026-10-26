@@ -11,7 +11,7 @@ const HELP = {
       <li>The big letter is the note heard. The needle shows how far off it is: left is flat (tighten), right is sharp (loosen).</li>
       <li>Turn the peg until the needle sits in the green zone and the panel turns green.</li>
     </ol>
-    <p>Tap a string button to hear its reference note. The tuner follows the string you play; the outlined button is its target.</p>
+    <p>Tap a string button to hear its reference note.</p>
     <p>Change instrument, tuning or the A4 reference below the strings.</p>`,
   beats: `
     <h2>Beat tuning</h2>

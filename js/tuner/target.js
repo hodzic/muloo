@@ -5,6 +5,8 @@
 // (Drop D, new strings) never lands on the wrong note. A reading an octave
 // above a string, where no string is, is taken as that string: low strings'
 // strong 2nd harmonic, or the 12th-fret harmonic, both tune the same string.
+// Up to an octave below the lowest string counts as that string: nothing
+// lower to mix it up with, and a new string starts well below its note.
 
 import { cents, midiToFreq, noteInfo } from './pitch.js';
 
@@ -36,6 +38,9 @@ export function chooseTarget(freq, strings, a4 = 440, prev = null) {
     const down = targets.findIndex((t) => Math.abs(cents(f / 2, t)) <= OCTAVE_TOL);
     if (down >= 0) { f /= 2; hit = { i: down, c: cents(f, targets[down]) }; }
   }
+
+  const low = targets.indexOf(Math.min(...targets));
+  if (!hit && low >= 0 && f < targets[low] && cents(f, targets[low]) >= -1200) hit = { i: low, c: cents(f, targets[low]) };
 
   if (hit && prev != null && prev !== hit.i && prev < targets.length) {
     const cPrev = cents(f, targets[prev]);

@@ -5,6 +5,7 @@
   "description": "No build step: the repo is deployed as-is. This file only marks the JS as ES modules for Node and defines the test command.",
   "scripts": {
     "test": "node test/dsp.test.mjs",
+    "bump": "node tools/bump.mjs",
     "serve": "mkdir -p .serve && ln -sfn .. .serve/muloo && python3 -m http.server 8000 --directory .serve"
   }
 }

@@ -15,6 +15,8 @@ import { $, $$, escapeHtml, onPressRepeat } from '../util/dom.js';
 const ANALYSIS_MS = 40;
 const RMS_GATE = 10 ** (-54 / 20);
 const APERIODICITY_GATE = 0.15;
+const MIN_HZ = 40;
+const MAX_HZ = 1400;
 const IN_TUNE_CENTS = 3;
 const LONG_PRESS_MS = 500;
 const HISTORY = 5;
@@ -383,8 +385,10 @@ function loop(now) {
 
   let est = null;
   if (level >= RMS_GATE) {
-    const r = yin(buf, sampleRate, { minFreq: 70, maxFreq: 1400, threshold: APERIODICITY_GATE });
-    if (r && r.aperiodicity <= APERIODICITY_GATE && r.freq >= 70 && r.freq <= 1400) est = r.freq;
+    // Down to 40 Hz: a slack new low string sits well below its note, and a
+    // floor above its pitch would lock onto its 2nd or 3rd harmonic instead.
+    const r = yin(buf, sampleRate, { minFreq: MIN_HZ, maxFreq: MAX_HZ, threshold: APERIODICITY_GATE });
+    if (r && r.aperiodicity <= APERIODICITY_GATE && r.freq >= MIN_HZ && r.freq <= MAX_HZ) est = r.freq;
   }
 
   if (est == null) {

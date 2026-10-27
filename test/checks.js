@@ -286,7 +286,8 @@ export function runDspChecks() {
       ['D2 (Drop D) against standard', chooseTarget(at('D2'), std), 0, -200],
       ['E3: E2’s octave harmonic', chooseTarget(at('E3', 3), std), 0, 3],
       ['F♯3: between D3 and G3, nearer G3', chooseTarget(at('F#3'), std), 3, -100],
-      ['C2: far from any string', chooseTarget(at('C2', -150), std), null, null],
+      ['A4: far from any string', chooseTarget(at('A4'), std), null, null],
+      ['A1: slack new low E, an octave range below', chooseTarget(at('A1'), std), 0, -700],
       ['hysteresis keeps D3 (+270 ¢) over G3 (−230 ¢)', chooseTarget(at('G3', -230), std, 440, 2), 2, 270],
       ['without hysteresis the nearer G3 wins', chooseTarget(at('G3', -230), std), 3, -230],
     ];

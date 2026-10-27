@@ -1,8 +1,9 @@
 // Service worker: cache-first, versioned (DESIGN.md §8).
-// Bump CACHE whenever a shell file changes so clients get the update toast.
+// Run `npm run bump` whenever a shell file changes: it sets CACHE to the new version, so clients get the update toast.
 
-const CACHE = 'muloo-v62';
+const CACHE = 'muloo-2026-10-27a';
 const INBOX = 'muloo-inbox';
+const OWN = /^(muloo-|gp-v)/; // this app's caches, old names included
 
 const SHELL = [
   './',
@@ -89,7 +90,8 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     for (const key of await caches.keys()) {
-      if (key !== CACHE && key !== INBOX) await caches.delete(key);
+      // Only MuLoo's own old caches: the other apps on hodzic.github.io share this origin's storage.
+      if (OWN.test(key) && key !== CACHE && key !== INBOX) await caches.delete(key);
     }
     await self.clients.claim();
   })());

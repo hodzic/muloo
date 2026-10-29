@@ -1,6 +1,6 @@
 # MuLoo
 
-A practice-session PWA for guitar and ukulele: tuner, metronome, PDF score viewer and a looping practice recorder. Vanilla JS, no build step, everything stays on the device. See [DESIGN.md](DESIGN.md).
+A practice-session PWA for guitar, ukulele and violin: tuner, metronome, PDF score viewer and a looping practice recorder. Vanilla JS, no build step, everything stays on the device. See [DESIGN.md](DESIGN.md).
 
 ## Status
 

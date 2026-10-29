@@ -1,7 +1,7 @@
 // Tuner tab: standard mode (DESIGN.md §5.1) and beat mode (§5.2, beats-ui.js).
 
 import { yin, rms, median, parseNote, midiToFreq, cents, noteName, noteOctave } from './pitch.js';
-import { INSTRUMENTS, getPreset, defaultPresetKey } from './presets.js';
+import { INSTRUMENTS, getPreset, defaultPresetKey, stringCents } from './presets.js';
 import { mountBeats, renderBeats, startBeats, stopBeats } from './beats-ui.js';
 import { pluck, stopTone } from './reference-tone.js';
 import { chooseTarget } from './target.js';
@@ -175,6 +175,11 @@ function presetStrings() {
   return getPreset(instrument, preset).strings.map(parseNote);
 }
 
+function presetCents() {
+  const { instrument, preset } = state();
+  return stringCents(getPreset(instrument, preset));
+}
+
 function renderSettings() {
   const { instrument, preset, a4 } = state();
   $$('[data-instrument]', root).forEach((b) => {
@@ -241,7 +246,7 @@ function setTone(i) {
     }
   } else {
     const midi = strings[toneString];
-    const freq = midiToFreq(midi, state().a4);
+    const freq = midiToFreq(midi + presetCents()[toneString] / 100, state().a4);
     pauseMic();
     // When it dies away, go back to listening (unless another tap took over).
     pluck(freq, { onEnd: () => { if (token === toneToken) setTone(null); } });
@@ -416,8 +421,9 @@ function toggleLock(i) {
  * target.js), or to the nearest string when none is locked.
  */
 function readingFor(freq, strings, a4) {
-  if (focusString == null || focusString >= strings.length) return chooseTarget(freq, strings, a4, shownString);
-  const t = chooseTarget(freq, [strings[focusString]], a4, 0);
+  const offsets = presetCents();
+  if (focusString == null || focusString >= strings.length) return chooseTarget(freq, strings, a4, shownString, offsets);
+  const t = chooseTarget(freq, [strings[focusString]], a4, 0, [offsets[focusString]]);
   return t.string == null ? t : { ...t, string: focusString };
 }
 

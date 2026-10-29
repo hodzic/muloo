@@ -19,7 +19,7 @@ These workflows drive the UI. Each one should take as few taps as possible from 
 
 | # | Workflow | Path | Key requirements |
 |---|---|---|---|
-| W1 | **Tune a guitar or ukulele** | Tune tab | The instrument (guitar or uke) is remembered. Presets for both instruments (5.1). |
+| W1 | **Tune a guitar, ukulele or violin** | Tune tab | The instrument is remembered. Presets for each instrument (5.1). |
 | W2 | **Record practice, with or without metronome** | Practice tab → Record | The metronome is optional and toggled from the same screen. Count-in. The click may be recorded along with the playing (5.3a). |
 | W3 | **Play back an earlier recording** | Recordings tab → tap → Player | The most recent take is at the top. The player remembers its A/B loop and speed. |
 | W4 | **Add a score PDF** | Scores tab → + | Also reachable through Android's "Open with" or share menu, via the manifest's `share_target` and `file_handlers`. Reads an embedded map if present. |
@@ -121,10 +121,11 @@ All data stays on the device.
   - An in-tune indicator (green) at ±3 cents.
 - **Settings:**
   - Reference pitch A4, adjustable from 430 to 450 Hz (default 440).
-  - Instrument: Guitar or Ukulele.
+  - Instrument: Guitar, Ukulele or Violin.
   - Tuning preset:
     - Guitar: Standard, Drop D, DADGAD, or Open G.
     - Ukulele: Standard GCEA with a high G (re-entrant), GCEA with a low G, or Baritone DGBE.
+    - Violin: GDAE in pure (beatless) fifths from the A (G −3.9 ¢, D −2 ¢, E +2 ¢ against equal temperament), GDAE equal tempered, or AEAE cross tuning. Fretless: beat mode offers only Interval, aiming for a beatless fifth in the pure tunings.
     - The preset highlights the target string's note.
     - Beat-mode string pairs come from the preset. For a re-entrant ukulele, show the unison pairs, such as the 5th fret of E against the open A, and the interval checks. Don't assume the strings rise in pitch from one to the next.
   - Frequency range is 70–1400 Hz, which covers both instruments.

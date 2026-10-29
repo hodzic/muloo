@@ -12,7 +12,8 @@ const HELP = {
       <li>Turn the peg until the needle sits in the green zone and the panel turns green.</li>
     </ol>
     <p>The outlined string button is the string the reading is for; it turns green when in tune. The tuner picks the nearest string by itself. Tap a string button to hear its reference note. Long-press it to lock the reading to that string, however far off it is (handy for big retunes); long-press again to unlock.</p>
-    <p>Change instrument, tuning or the A4 reference below the strings.</p>`,
+    <p>Change instrument (guitar, ukulele, violin), tuning or the A4 reference below the strings.</p>
+    <p><b>Violin:</b> tune the A first. "GDAE pure" (the usual way) sets G, D and E a fifth apart with no beating, a few cents off the piano's equal-tempered notes; "GDAE equal" matches a piano. "AEAE cross" is a fiddle tuning. Bow or pluck each string.</p>`,
   beats: `
     <h2>Beat tuning</h2>
     <p>For the final touch after Standard mode: it evens out neighbouring strings so chords sound clean. Two strings slightly out of tune make a “wah-wah” pulse, the beat. Its speed is how far apart they are.</p>
@@ -34,6 +35,7 @@ const HELP = {
         If the beat speeds up, turn the other way. Green means done.</li>
       <li>Go across the neck: E–A, A–D, D–G, G–B, B–E.</li>
     </ol>
+    <p><b>Violin:</b> only Interval works (no frets). Bow two open strings together and tune the higher one until the fifth stops beating: A–E, then D–A, then G–D, taking the A as right. With the equal-tempered tuning, aim for the small rate shown instead.</p>
     <p>The dot pulses with the beat. “Coarse” means the strings are still far apart; follow the arrow hint.</p>`,
 };
 

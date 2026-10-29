@@ -16,12 +16,13 @@ const OCTAVE_TOL = 60; // cents
 
 /**
  * freq: detected Hz. strings: MIDI numbers of the preset. prev: the string
- * index chosen last time (for hysteresis) or null.
+ * index chosen last time (for hysteresis) or null. offsets: cents each
+ * string sits off equal temperament (pure fifths), default none.
  * Returns { string: index, midi, cents, freq } (relative to that string),
  * or { string: null, midi, cents, freq } for a plain note.
  */
-export function chooseTarget(freq, strings, a4 = 440, prev = null) {
-  const targets = strings.map((m) => midiToFreq(m, a4));
+export function chooseTarget(freq, strings, a4 = 440, prev = null, offsets = []) {
+  const targets = strings.map((m, i) => midiToFreq(m + (offsets[i] ?? 0) / 100, a4));
   const nearest = (f) => {
     let best = null;
     targets.forEach((t, i) => {

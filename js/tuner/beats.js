@@ -169,7 +169,7 @@ const HARMONIC_FRET = { 2: 12, 3: 7, 4: 5, 5: 4 };
  * re-entrant uke's high G pairs with C as a fifth above it). Each pair
  * lists how it can be checked in each sub-mode.
  */
-export function stringPairs(strings) {
+export function stringPairs(strings, { fretless = false } = {}) {
   const midis = strings.map(parseNote);
   const pairs = [];
   for (let i = 0; i + 1 < midis.length; i++) {
@@ -185,8 +185,8 @@ export function stringPairs(strings) {
       semis,
       ratio,
       modes: {
-        unison: semis > 0 && semis <= 9,
-        harmonics: !!harmonicsOk,
+        unison: !fretless && semis > 0 && semis <= 9,
+        harmonics: !fretless && !!harmonicsOk,
         interval: !!ratio,
       },
     });
@@ -199,8 +199,9 @@ export function stringPairs(strings) {
  * { f0, target, refFreq, tunedFreq, instruction } where target is the
  * equal-tempered beat rate (0 for unison) and refFreq/tunedFreq are where the
  * reference (lower) and tuned (higher) strings' partials should sit.
+ * pure: the interval is tuned beatless (violin fifths), not equal-tempered.
  */
-export function beatTarget(pair, mode, a4 = 440) {
+export function beatTarget(pair, mode, a4 = 440, { pure = false } = {}) {
   const fLo = midiToFreq(pair.lo.midi, a4), fHi = midiToFreq(pair.hi.midi, a4);
   const loName = pair.lo.note.replace(/-?\d+$/, ''), hiName = pair.hi.note.replace(/-?\d+$/, '');
   if (mode === 'unison') {
@@ -208,7 +209,7 @@ export function beatTarget(pair, mode, a4 = 440) {
     return { f0: fHi, target: 0, refFreq: fHi, tunedFreq: fHi, instruction: `Fret ${loName} at ${pair.semis}, play it with open ${hiName}.` };
   }
   const [p, q] = pair.ratio; // fHi / fLo ≈ p / q, so p·fLo ≈ q·fHi
-  const refFreq = p * fLo, tunedFreq = q * fHi;
+  const refFreq = p * fLo, tunedFreq = pure ? refFreq : q * fHi;
   const instruction = mode === 'harmonics'
     ? `Harmonics: ${loName} at fret ${HARMONIC_FRET[p]}, ${hiName} at fret ${HARMONIC_FRET[q]}.`
     : `Play open ${loName} and ${hiName} together.`;

@@ -3,7 +3,7 @@
 
 import { stringPairs, beatTarget } from './beats.js';
 import { rms, median } from './pitch.js';
-import { getPreset } from './presets.js';
+import { INSTRUMENTS, getPreset } from './presets.js';
 import { getInput, onInputData } from '../audio/input.js';
 import { settings } from '../storage/db.js';
 import { $, $$, escapeHtml } from '../util/dom.js';
@@ -86,10 +86,13 @@ export function mountBeats(el) {
 /** The selected pair and what to listen for, or null if none fits the mode. */
 function current() {
   const s = state();
-  const pairs = stringPairs(getPreset(s.instrument, s.preset).strings);
+  const preset = getPreset(s.instrument, s.preset);
+  const pairs = stringPairs(preset.strings, { fretless: INSTRUMENTS[s.instrument]?.fretless });
+  // A method no pair can use (unison on a violin) falls back to one that can.
+  if (!pairs.some((p) => p.modes[s.mode])) s.mode = Object.keys(MODES).find((m) => pairs.some((p) => p.modes[m])) ?? s.mode;
   const usable = pairs.filter((p) => p.modes[s.mode]);
   const pair = usable.find((p) => p.key === s.pairKey) ?? usable[usable.length - 1] ?? null;
-  return { s, pairs, pair, target: pair ? beatTarget(pair, s.mode, s.a4) : null };
+  return { s, pairs, pair, target: pair ? beatTarget(pair, s.mode, s.a4, { pure: !!preset.cents }) : null };
 }
 
 const short = (note) => note.replace(/-?\d+$/, '');
@@ -101,6 +104,7 @@ export function renderBeats() {
   $$('[data-beat-mode]', root).forEach((b) => {
     b.classList.toggle('selected', b.dataset.beatMode === s.mode);
     b.setAttribute('aria-checked', b.dataset.beatMode === s.mode);
+    b.disabled = !pairs.some((p) => p.modes[b.dataset.beatMode]);
   });
   $('.pairs', root).innerHTML = pairs.map((p) => `
     <button class="btn pair${p === pair ? ' selected' : ''}" data-pair="${p.key}" ${p.modes[s.mode] ? '' : 'disabled'}

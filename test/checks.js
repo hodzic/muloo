@@ -293,6 +293,11 @@ export function runDspChecks() {
     ];
     const uke = ['G4', 'C4', 'E4', 'A4'].map(parseNote);
     cases.push(['re-entrant uke G4', chooseTarget(at('G4', -5), uke), 0, -5]);
+    // Violin pure fifths: G is 3.9 ¢ under equal temperament, E 2 ¢ over.
+    const vln = ['G3', 'D4', 'A4', 'E5'].map(parseNote);
+    const pure = [-3.91, -1.955, 0, 1.955];
+    cases.push(['violin G3 two pure fifths under A4 (195.56 Hz)', chooseTarget(440 * 4 / 9, vln, 440, null, pure), 0, 0]);
+    cases.push(['violin E5 equal tempered reads −2 ¢ of pure', chooseTarget(at('E5'), vln, 440, null, pure), 3, -2]);
     const bad = cases.filter(([, r, s, c]) => r.string !== s || (c != null && Math.abs(r.cents - c) > 0.5));
     results.push({
       name: 'Tuner auto mode: nearest string, far offsets, octave harmonic, hysteresis',

@@ -389,7 +389,8 @@ On first launch, call `navigator.storage.persist()`.
   - `share_target` (POST with multipart form data) and `file_handlers` for `application/pdf`, so a PDF can be sent to MuLoo from the Files app or a browser (W4).
 - **Service worker:**
   - Cache-first for the app shell and `/vendor/`.
-  - The cache name is versioned (`muloo-v36`, …; `gp-vNN` before v36), and old caches are deleted on activate.
+  - The cache name carries the app version, `muloo-2026-10-27a` (release date in US Pacific time plus a letter per release that day; `npm run bump` sets it and `APP_VERSION`). Before that it was `muloo-vNN`, and `gp-vNN` before v36.
+  - On activate, only MuLoo's own old caches are deleted: the other apps on hodzic.github.io share the origin's Cache Storage.
 - **Updates:** show an "Update available — reload" toast when a new service worker is waiting.
 
 ## 9. Testing

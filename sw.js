@@ -1,7 +1,9 @@
-// Service worker: cache-first, versioned (DESIGN.md §8).
+// Service worker (DESIGN.md §8). The shared part (install, update, cache cleanup, serving the app's files from the cache
+// and refreshing them in the background) is /shared/sw-core.js on hodzic.github.io, used by all the apps there.
 // Run `npm run bump` whenever a shell file changes: it sets CACHE to the new version, so clients get the update toast.
+importScripts('/shared/sw-core.js');
 
-const CACHE = 'muloo-2026-10-30a';
+const CACHE = 'muloo-2026-10-30b';
 const INBOX = 'muloo-inbox';
 const OWN = /^(muloo-|gp-v)/; // this app's caches, old names included
 
@@ -81,64 +83,33 @@ const SHELL = [
   'js/util/wav.js',
 ];
 
-self.addEventListener('install', (event) => {
-  // Bypass the HTTP cache: GitHub Pages lets browsers keep files for 10
-  // minutes, which would fill the new cache with the previous version.
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))));
-});
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil((async () => {
-    for (const key of await caches.keys()) {
-      // Only MuLoo's own old caches: the other apps on hodzic.github.io share this origin's storage.
-      if (OWN.test(key) && key !== CACHE && key !== INBOX) await caches.delete(key);
+appWorker({
+  cache: CACHE,
+  // only MuLoo's own old caches: the other apps on hodzic.github.io share this origin's storage
+  own: (key) => OWN.test(key) && key !== INBOX,
+  shell: SHELL,
+  index: 'index.html',
+  skip: (url) => url.pathname.includes('/test/'), // test pages always come from the network
+  route(event, url) {
+    const req = event.request;
+    if (url.origin !== location.origin) return false;
+    // Android share sheet → MuLoo (W4). Files wait in the inbox until the
+    // Scores tab imports them.
+    if (req.method === 'POST' && url.pathname.endsWith('/share-target')) {
+      event.respondWith((async () => {
+        const form = await req.formData();
+        const inbox = await caches.open(INBOX);
+        for (const file of form.getAll('score')) {
+          if (!(file instanceof File)) continue;
+          const key = `inbox/${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          await inbox.put(key, new Response(file, {
+            headers: { 'Content-Type': file.type || 'application/pdf', 'X-File-Name': encodeURIComponent(file.name) },
+          }));
+        }
+        return Response.redirect('./?shared=1#scores', 303);
+      })());
+      return true;
     }
-    await self.clients.claim();
-  })());
-});
-
-self.addEventListener('message', (event) => {
-  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting();
-});
-
-self.addEventListener('fetch', (event) => {
-  const req = event.request;
-  const url = new URL(req.url);
-  if (url.origin !== location.origin) return;
-
-  // Android share sheet → MuLoo (W4). Files wait in the inbox until the
-  // Scores tab imports them.
-  if (req.method === 'POST' && url.pathname.endsWith('/share-target')) {
-    event.respondWith((async () => {
-      const form = await req.formData();
-      const inbox = await caches.open(INBOX);
-      for (const file of form.getAll('score')) {
-        if (!(file instanceof File)) continue;
-        const key = `inbox/${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        await inbox.put(key, new Response(file, {
-          headers: { 'Content-Type': file.type || 'application/pdf', 'X-File-Name': encodeURIComponent(file.name) },
-        }));
-      }
-      return Response.redirect('./?shared=1#scores', 303);
-    })());
-    return;
-  }
-
-  if (req.method !== 'GET') return;
-  // Test pages always come from the network.
-  if (url.pathname.includes('/test/')) return;
-  event.respondWith((async () => {
-    const cache = await caches.open(CACHE);
-    const hit = await cache.match(req, { ignoreSearch: req.mode === 'navigate' });
-    if (hit) return hit;
-    try {
-      // revalidate: the browser may still hold the previous version's file over HTTP (GitHub Pages: 10 minutes)
-      const res = await fetch(req.mode === 'navigate' ? new Request(req.url, { cache: 'no-cache' }) : new Request(req, { cache: 'no-cache' }));
-      if (res.ok && res.type === 'basic') cache.put(req, res.clone());
-      return res;
-    } catch (e) {
-      if (req.mode === 'navigate') return (await cache.match('index.html')) ?? Response.error();
-      throw e;
-    }
-  })());
+    return false;
+  },
 });

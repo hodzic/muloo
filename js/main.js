@@ -50,37 +50,13 @@ function renderHelpButton() {
 }
 document.addEventListener('helpchange', renderHelpButton);
 
+// Updates: the mechanics are /shared/update.js on hodzic.github.io, shared by the apps there
+// (loaded on its own, so the app still runs without it).
 function registerServiceWorker() {
-  if (!('serviceWorker' in navigator)) return;
-  let reloading = false;
-  // The first install also fires controllerchange (clients.claim); only an
-  // update replacing a running worker should reload. Checked at each change,
-  // not at page load, so a page opened before the first install updates too.
-  let ctl = navigator.serviceWorker.controller;
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    const had = ctl;
-    ctl = navigator.serviceWorker.controller;
-    if (reloading || !had) return;
-    reloading = true;
-    location.reload();
-  });
-  const offerUpdate = (worker) => toast('Update available', {
+  import('/shared/update.js').then((u) => u.registerUpdates('sw.js', () => toast('Update available', {
     action: 'Reload',
-    onAction: () => worker.postMessage({ type: 'SKIP_WAITING' }),
-  });
-  navigator.serviceWorker.register('sw.js').then((reg) => {
-    if (reg.waiting && navigator.serviceWorker.controller) offerUpdate(reg.waiting);
-    // An installed app can stay open for days: check again on coming back.
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') reg.update().catch(() => {});
-    });
-    reg.addEventListener('updatefound', () => {
-      const w = reg.installing;
-      w?.addEventListener('statechange', () => {
-        if (w.state === 'installed' && navigator.serviceWorker.controller) offerUpdate(w);
-      });
-    });
-  }).catch((e) => console.warn('Service worker registration failed', e));
+    onAction: () => u.applyUpdate(),
+  }))).catch((e) => console.warn('Service worker registration failed', e));
 }
 
 // Other apps' playback (e.g. Spotify) can crackle while the mic is open and

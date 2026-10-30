@@ -4,7 +4,7 @@ import { listInputs, setInputDevice, setInputGainDb, looksBluetooth, getInput, o
 import { settings } from './storage/db.js';
 import { $, escapeHtml, formatBytes } from './util/dom.js';
 
-export const APP_VERSION = '2026-10-30a';
+export const APP_VERSION = '2026-10-30b';
 
 const METER_FLOOR_DB = -60;
 const CLIP_HOLD_MS = 2000;
@@ -144,27 +144,23 @@ async function checkUpdate() {
   const status = $('.update-status', dialog);
   const btn = $('.update-btn', dialog);
   btn.hidden = true;
-  const reg = await navigator.serviceWorker?.getRegistration();
-  if (!reg) { status.textContent = ''; return; }
-  const offer = (w) => {
+  const u = await import('/shared/update.js').catch(() => null);
+  if (!u?.registration()) { status.textContent = ''; return; }
+  const offer = () => {
     status.textContent = 'A new version is ready.';
     btn.hidden = false;
-    btn.onclick = () => { btn.disabled = true; w.postMessage({ type: 'SKIP_WAITING' }); };
+    btn.onclick = () => { btn.disabled = true; u.applyUpdate(); };
   };
-  if (reg.waiting) return offer(reg.waiting);
+  if (u.updateWaiting()) return offer();
   status.textContent = 'Checking for updates…';
-  try {
-    await reg.update();
-  } catch {
-    status.textContent = 'Couldn’t check for updates (offline?).';
-    return;
-  }
-  const w = reg.installing ?? reg.waiting;
-  if (!w) { status.textContent = 'Up to date.'; return; }
-  if (w.state === 'installed') return offer(w);
+  const r = await u.checkForUpdate();
+  if (r === 'ready') return offer();
+  if (r === 'failed') { status.textContent = 'Couldn’t check for updates (offline?).'; return; }
+  if (r === 'current') { status.textContent = 'Up to date.'; return; }
   status.textContent = 'Downloading update…';
-  w.addEventListener('statechange', () => {
-    if (w.state === 'installed') offer(w);
+  const w = u.registration().installing;
+  w?.addEventListener('statechange', () => {
+    if (w.state === 'installed') offer();
     else if (w.state === 'redundant') status.textContent = 'Update failed. Try again later.';
   });
 }

@@ -1,7 +1,7 @@
 // Service worker: cache-first, versioned (DESIGN.md §8).
 // Run `npm run bump` whenever a shell file changes: it sets CACHE to the new version, so clients get the update toast.
 
-const CACHE = 'muloo-2026-10-29c';
+const CACHE = 'muloo-2026-10-29d';
 const INBOX = 'muloo-inbox';
 const OWN = /^(muloo-|gp-v)/; // this app's caches, old names included
 

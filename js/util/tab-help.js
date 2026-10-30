@@ -38,6 +38,7 @@ const HELP = {
     <h3>Loop</h3>
     <ul>
       <li>Tap Loop, then tap the first and last measures (swipe between them if needed). A green bar marks the loop. Tap Loop ✕ to clear it.</li>
+      <li>With measures listed in Play, Loop repeats all of them straight away; there is nothing to tap.</li>
       <li>Speed up: BPM added on each pass, up to the tempo you set (leave it empty for no limit). E.g. start at 80, +2 each loop, up to 100.</li>
     </ul>
     <h3>Play only some measures</h3>

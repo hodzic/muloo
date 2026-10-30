@@ -29,6 +29,8 @@ export class FollowView {
     Object.assign(this, { container, pdf, flat, indices, rows, onTap, onLongPress, onSwipe });
     this.strips = new Map(); // `${system}@${height}` → Promise<{ canvas, scale, width }>
     this.slots = []; // [{ system, el }] top to bottom
+    this.spare = null; // the row after them, waiting below the view already drawn
+    this.leaving = []; // rows on their way out, once the new top row is drawn
     this.pos = null;
     this.loop = null; // { from, to } play positions, highlighted
     this.root = document.createElement('div');
@@ -63,14 +65,16 @@ export class FollowView {
 
   setLoop(loop) {
     this.loop = loop;
-    this.slots.forEach((s) => this.drawLoop(s));
+    [...this.slots, this.spare].forEach((s) => s && this.drawLoop(s));
   }
 
   layout() {
     this.width = this.root.clientWidth;
     this.rowH = Math.max(40, Math.floor(this.root.clientHeight / this.rows));
-    this.slots.forEach((s) => s.el.remove());
+    [...this.slots, ...this.leaving, this.spare].forEach((s) => s?.el.remove());
     this.slots = [];
+    this.leaving = [];
+    this.spare = null;
     this.render(true);
   }
 
@@ -200,8 +204,8 @@ export class FollowView {
   }
 
   rebuildSlots(systems, animate) {
-    const old = this.slots;
-    const reuse = new Map(old.map((s) => [s.system, s]));
+    const reuse = new Map([...this.slots, this.spare].filter(Boolean).map((s) => [s.system, s]));
+    this.root.style.setProperty('--glide', animate ? `${GLIDE_MS}ms` : '0ms');
     this.slots = systems.map((k, row) => {
       let s = reuse.get(k);
       if (s) reuse.delete(k);
@@ -209,17 +213,33 @@ export class FollowView {
       s.el.style.transform = `translateY(${row * this.rowH}px)`;
       return s;
     });
-    for (const s of reuse.values()) {
-      if (animate) {
-        s.el.style.transform = `translateY(${-this.rowH}px)`;
-        s.el.style.opacity = '0';
-        setTimeout(() => s.el.remove(), GLIDE_MS);
-      } else {
-        s.el.remove();
-      }
+    // Keep the row after these drawn and waiting just below the view, so it
+    // is already painted when it glides in.
+    const next = this.visibleSystems(this.rows + 1)[this.rows];
+    this.spare = null;
+    if (next != null && !systems.includes(next)) {
+      this.spare = reuse.get(next) ?? this.makeSlot(next);
+      reuse.delete(next);
+      this.spare.el.style.transform = `translateY(${this.rows * this.rowH}px)`;
     }
+    this.leaving.forEach((s) => s.el.remove());
+    this.leaving = [...reuse.values()];
+    // Unless the new top row is still being drawn: then the old rows stay put
+    // until it is (makeSlot), rather than leave a blank row.
+    if (!animate || this.slots[0]?.ready) this.flushLeaving();
     this.slots.forEach((s, row) => { if (row > 0) s.highlight.hidden = true; });
-    this.root.style.setProperty('--glide', animate ? `${GLIDE_MS}ms` : '0ms');
+  }
+
+  /** Glide the rows that left the view up and out. */
+  flushLeaving() {
+    const out = this.leaving;
+    this.leaving = [];
+    for (const s of out) {
+      if (this.root.style.getPropertyValue('--glide') === '0ms') { s.el.remove(); continue; }
+      s.el.style.transform = `translateY(${-this.rowH}px)`;
+      s.el.style.opacity = '0';
+      setTimeout(() => s.el.remove(), GLIDE_MS);
+    }
   }
 
   makeSlot(k) {
@@ -234,6 +254,7 @@ export class FollowView {
       if (!el.isConnected) return;
       slot.inner.prepend(canvas);
       Object.assign(slot, { scale, width, ready: true });
+      slot.inner.style.transform = `translateX(${this.offsetFor(width, 0)}px)`;
       const sys = this.flat.systems[k];
       const first = this.flat.measures[sys?.first];
       if (first && sys.last >= sys.first) {
@@ -256,6 +277,7 @@ export class FollowView {
         }
       }
       this.drawLoop(slot);
+      if (slot === this.slots[0]) this.flushLeaving();
       this.render(false);
     }).catch((e) => console.error('Could not draw row', e));
     return slot;

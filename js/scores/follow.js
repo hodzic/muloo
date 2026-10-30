@@ -32,6 +32,7 @@ export class FollowController {
   start({ startPos = 0, tempo, loop = null, rampStep = 0, rampTarget = null, countInBars = 1 } = {}) {
     if (this.running) this.stop();
     this.opts = { tempo, loop, rampStep, rampTarget };
+    this.startBpm = metronome.bpm;
     this.plan = this.makePlan(startPos, tempo);
     const first = this.plan.next().value;
     if (!first) return null;
@@ -147,6 +148,9 @@ export class FollowController {
     this.running = false;
     cancelAnimationFrame(this.raf);
     if (metronome.barHook) metronome.barHook = null;
+    // Back to the tempo we started from: the score's tempo changes and a
+    // loop speed-up last only for the run.
+    if (this.startBpm && metronome.bpm !== this.startBpm) metronome.set({ bpm: this.startBpm });
     this.bars.clear();
     this.onEnd?.();
   }

@@ -16,8 +16,9 @@ export function mount(el) {
   createMetronomeBar($('.metro-slot', el), { flashTarget: stage });
   metronome.onBeat((ev) => {
     if (ev.sub) return;
-    count.textContent = ev.beat + 1;
-    count.classList.toggle('first', ev.beat === 0);
+    // In a silent bar of a gap, keep the beat to yourself.
+    count.textContent = ev.muted ? '·' : ev.beat + 1;
+    count.classList.toggle('first', !ev.muted && ev.level === 3);
     count.classList.toggle('count-in', ev.countIn);
   });
   metronome.onChange(() => {

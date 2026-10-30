@@ -7,12 +7,24 @@ const HELP = {
   metronome: `
     <h2>Metronome</h2>
     <ul>
-      <li>Start and Stop at the bottom. The big number is the beat; beat 1 flashes brighter.</li>
+      <li>Start and Stop at the bottom. The big number is the beat; accented beats flash brighter.</li>
       <li>− and + change the tempo by 1 BPM (hold to keep going), or drag the slider.</li>
       <li>Tap: tap the button along with the beat a few times to set the tempo.</li>
       <li>Time signature and subdivision (eighths, triplets, sixteenths) are in the drop-downs.</li>
       <li>Speaker or Headphones plays the click; Visual only just flashes. The slider beside it sets the click volume.</li>
       <li>The metronome keeps running when you switch tabs. The Practice tab has a small bar to stop it or change the tempo.</li>
+    </ul>
+    <h3>Beats and sound</h3>
+    <ul>
+      <li>Tap a beat dot to change it: accent (big, high click), medium, normal, or silent (dashed). E.g. silence 1 and 3 to hear only 2 and 4. Each time signature remembers its own pattern.</li>
+      <li>Sound: beep, wood block, cowbell or clap.</li>
+      <li>Swing (with eighths or sixteenths) delays the off-beat from straight to a triplet feel.</li>
+    </ul>
+    <h3>Training</h3>
+    <ul>
+      <li>Gap: e.g. 4 bars on, 2 bars silent. Keep playing through the silent bars and see if you land with the click when it comes back. Set silent to 0 to turn it off.</li>
+      <li>Speed up: add BPM every few bars, up to a top tempo (empty for no limit). Set it to 0 to turn it off. On Stop the tempo goes back to where it started.</li>
+      <li>Gap also works with a score on the Practice tab: the score keeps scrolling through the silent bars. Speed up doesn't apply there; Practice has its own loop speed-up.</li>
     </ul>`,
 
   practice: `
@@ -28,6 +40,7 @@ const HELP = {
       <li>Press ▶ on the metronome bar: after the count-in, the score scrolls with the beat. The orange line is where you are; the badge in the corner shows the measure.</li>
       <li>1 row or 2 rows: how much of the score to show at once.</li>
       <li>⏮ goes back to the first measure (or the start of the loop).</li>
+      <li>The Gap setting on the Metronome tab works here too: the click goes quiet for the silent bars while the score keeps scrolling.</li>
       <li>Full screen (the corner button by the status line) hides everything else; tap it again to come back.</li>
     </ul>
     <h3>Moving around</h3>

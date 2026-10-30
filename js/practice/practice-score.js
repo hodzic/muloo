@@ -64,7 +64,12 @@ export function mountScorePanel(toolbarEl, stageEl, { onChange } = {}) {
   }));
   $('.ps-loop', root).addEventListener('click', () => {
     if (loop || loopMode) { loop = null; loopMode = false; pickingLoop = null; }
-    else { loopMode = true; }
+    else if (doc && doc.indices !== doc.fullIndices) {
+      // Measures listed in Play: loop over all of them, nothing to tap.
+      // Takes effect on the next Start if playing.
+      loop = { from: 0, to: doc.indices.length - 1 };
+      if (!ctrl?.running) { startPos = 0; view?.setPosition({ playPos: 0, frac: 0 }); }
+    } else { loopMode = true; }
     view?.setLoop(loop);
     renderTools();
     if (loopMode) setStatus('Loop: tap the first measure · swipe to move');
@@ -377,7 +382,8 @@ function renderStatus() {
   }
   const n = doc.flat.measures[doc.indices[startPos]]?.n ?? 1;
   const unverified = doc.verified ? '' : ' · map not checked yet: tap Map to review';
-  const loopText = loop ? ` · loop m.${doc.flat.measures[doc.indices[loop.from]].n}–${doc.flat.measures[doc.indices[loop.to]].n}` : '';
+  const whole = loop && loop.from === 0 && loop.to === doc.indices.length - 1 && doc.indices !== doc.fullIndices;
+  const loopText = whole ? ' · loop the Play measures' : loop ? ` · loop m.${doc.flat.measures[doc.indices[loop.from]].n}–${doc.flat.measures[doc.indices[loop.to]].n}` : '';
   setStatus(`Start at m.${n}${loopText}${unverified}`);
 }
 

@@ -11,13 +11,13 @@ const HELP = {
       <li>− and + change the tempo by 1 BPM (hold to keep going), or drag the slider.</li>
       <li>Tap: tap the button along with the beat a few times to set the tempo.</li>
       <li>Time signature and subdivision (eighths, triplets, sixteenths) are in the drop-downs.</li>
-      <li>Speaker or Headphones plays the click; Visual only just flashes. The slider beside it sets the click volume.</li>
+      <li>Speaker or Headphones: where the click plays; the slider beside it sets the volume.</li>
       <li>The metronome keeps running when you switch tabs. The Practice tab has a small bar to stop it or change the tempo.</li>
     </ul>
     <h3>Beats and sound</h3>
     <ul>
       <li>Tap a beat dot to change it: accent (big, high click), medium, normal, or silent (dashed). E.g. silence 1 and 3 to hear only 2 and 4. Each time signature remembers its own pattern.</li>
-      <li>Sound: beep, wood block, cowbell or clap.</li>
+      <li>Sound: beep, wood block, cowbell or clap. Visual only (no sound) just flashes the screen on each beat.</li>
       <li>Swing (with eighths or sixteenths) delays the off-beat from straight to a triplet feel.</li>
     </ul>
     <h3>Training</h3>

@@ -6,7 +6,9 @@ import { holdWakeLock, releaseWakeLock } from '../util/wakelock.js';
 import { $, $$, onPressRepeat } from '../util/dom.js';
 
 const SUB_LABELS = { none: 'No subdivision', eighths: 'Eighths', triplets: 'Triplets', sixteenths: 'Sixteenths' };
-const CLICK_LABELS = { audible: 'Speaker', headphones: 'Headphones', visual: 'Visual only' };
+// Where the click plays. "Visual only" lives in the sound menu instead.
+const OUTPUT_LABELS = { audible: 'Speaker', headphones: 'Headphones' };
+const SOUND_LABELS = { ...SOUND_NAMES, visual: 'Visual only (no sound)' };
 
 let initialized = false;
 
@@ -106,11 +108,11 @@ export function createMetronomeBar(container, { flashTarget } = {}) {
         <button class="btn tap">Tap</button>
       </div>
       <div class="row">
-        <select class="click-mode" aria-label="Click">${opts(CLICK_LABELS, CLICK_LABELS)}</select>
+        <select class="click-mode" aria-label="Play on">${opts(OUTPUT_LABELS, OUTPUT_LABELS)}</select>
         <label class="vol">🔊<input class="volume" type="range" min="0" max="1" step="0.05" aria-label="Click volume"></label>
       </div>
       <div class="row">
-        <select class="sound" aria-label="Sound">${opts(SOUND_NAMES, SOUND_NAMES)}</select>
+        <select class="sound" aria-label="Sound">${opts(SOUND_LABELS, SOUND_LABELS)}</select>
         <label class="vol swing">Swing<input class="swing-amount" type="range" min="0" max="1" step="0.05" aria-label="Swing"></label>
       </div>
       <div class="metro-train">
@@ -127,7 +129,11 @@ export function createMetronomeBar(container, { flashTarget } = {}) {
   $('.click-mode', root).addEventListener('change', (e) => metronome.set({ clickMode: e.target.value }));
   $('.volume', root).addEventListener('input', (e) => metronome.set({ volume: +e.target.value }));
   $('.tap', root).addEventListener('pointerdown', (e) => { e.preventDefault(); tapTempo(); });
-  $('.sound', root).addEventListener('change', (e) => metronome.set({ sound: e.target.value }));
+  $('.sound', root).addEventListener('change', (e) => {
+    const v = e.target.value;
+    if (v === 'visual') metronome.set({ clickMode: 'visual' });
+    else metronome.set({ sound: v, clickMode: $('.click-mode', root).value });
+  });
   $('.swing-amount', root).addEventListener('input', (e) => metronome.set({ swing: +e.target.value }));
   const num = (sel) => $(sel, root).value;
   const setGap = () => metronome.set({ gap: { play: num('.gap-play'), mute: num('.gap-mute') } });
@@ -140,9 +146,12 @@ export function createMetronomeBar(container, { flashTarget } = {}) {
     $('.bpm-slider', root).value = metronome.bpm;
     $('.time-sig', root).value = metronome.timeSig;
     $('.subdivision', root).value = metronome.subdivision;
-    $('.click-mode', root).value = metronome.clickMode;
+    const visual = metronome.clickMode === 'visual';
+    // While visual only, the output menu keeps its last choice for when sound comes back.
+    if (!visual) $('.click-mode', root).value = metronome.clickMode;
+    $('.click-mode', root).disabled = visual;
     $('.volume', root).value = metronome.volume;
-    $('.sound', root).value = metronome.sound;
+    $('.sound', root).value = visual ? 'visual' : metronome.sound;
     $('.swing-amount', root).value = metronome.swing;
     // Swing moves the off-beat eighths or sixteenths.
     $('.swing', root).hidden = !['eighths', 'sixteenths'].includes(metronome.subdivision);

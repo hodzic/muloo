@@ -73,7 +73,7 @@ All data stays on the device.
 ```
 /index.html           app shell, bottom tab bar
 /manifest.webmanifest
-/sw.js                service worker (cache-first, versioned)
+/sw.js                service worker (options for /shared/sw-core.js, versioned)
 /css/app.css
 /js/
   main.js             routing between tabs, app init
@@ -388,10 +388,11 @@ On first launch, call `navigator.storage.persist()`.
   - `display: standalone`, icons at 192 and 512 px, and a dark theme color.
   - `share_target` (POST with multipart form data) and `file_handlers` for `application/pdf`, so a PDF can be sent to MuLoo from the Files app or a browser (W4).
 - **Service worker:**
-  - Cache-first for the app shell and `/vendor/`.
+  - The shared part is `/shared/sw-core.js` on [hodzic.github.io](https://github.com/hodzic/hodzic.github.io), used by all the apps there; `sw.js` passes MuLoo's options (cache name, shell files, share target).
+  - App shell and `/vendor/` from the cache, refreshed in the background (revalidated, not the browser's HTTP-cached copy).
   - The cache name carries the app version, `muloo-2026-10-27a` (release date in US Pacific time plus a letter per release that day; `npm run bump` sets it and `APP_VERSION`). Before that it was `muloo-vNN`, and `gp-vNN` before v36.
   - On activate, only MuLoo's own old caches are deleted: the other apps on hodzic.github.io share the origin's Cache Storage.
-- **Updates:** show an "Update available — reload" toast when a new service worker is waiting.
+- **Updates:** show an "Update available — reload" toast when a new service worker is waiting (`/shared/update.js`).
 
 ## 9. Testing
 

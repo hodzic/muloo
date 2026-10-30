@@ -19,7 +19,7 @@ A practice-session PWA for guitar, ukulele and violin: tuner, metronome, PDF sco
 ## Run locally
 
 ```sh
-npm run serve   # then open http://localhost:8000/muloo/ (the manifest uses /muloo/ paths, as on GitHub Pages)
+npm run serve   # then open http://localhost:8000/muloo/ (the manifest uses /muloo/ paths, as on GitHub Pages); needs a checkout of hodzic.github.io next to this one, for /shared/
 ```
 
 The mic needs a secure context: `localhost` or HTTPS (GitHub Pages).

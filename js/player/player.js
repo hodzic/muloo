@@ -207,7 +207,8 @@ function trackPosition(t) {
   if (t < tr[0][0]) return { playPos: 0, frac: 0 };
   const m = follow.flat.measures[tr[k][1]];
   const dur = k + 1 < tr.length ? tr[k + 1][0] - tr[k][0] : (m.beats * 60) / (rec.tempo || m.bpm);
-  return { playPos: k, frac: Math.max(0, Math.min(0.999, (t - tr[k][0]) / dur)) };
+  const next = k + 1 < tr.length ? k + 1 : undefined;
+  return { playPos: k, frac: Math.max(0, Math.min(0.999, (t - tr[k][0]) / dur)), next, left: tr[k][0] + dur - t, beat: dur / m.beats };
 }
 
 async function editDetails() {

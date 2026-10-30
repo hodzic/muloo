@@ -244,10 +244,23 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .metro { display: flex; flex-direction: column; gap: 10px; }
 .beats { display: flex; gap: 8px; justify-content: center; min-height: 18px; align-items: center; }
 .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border); }
-.dot.first { width: 18px; height: 18px; }
 .dot.on { background: var(--text); border-color: var(--text); }
-.dot.first.on { background: var(--accent); border-color: var(--accent); }
 .count-in .dot.on { background: var(--warn); border-color: var(--warn); }
+/* Beat levels: accent biggest and orange-rimmed, silent hollow and dashed. */
+.dot[data-level="3"] { width: 18px; height: 18px; border-color: var(--accent); }
+.dot[data-level="2"] { width: 16px; height: 16px; }
+.dot[data-level="0"] { background: transparent; border-style: dashed; }
+.dot[data-level="0"].on { background: transparent; border-color: var(--text); }
+.dot[data-level="3"].on { background: var(--accent); border-color: var(--accent); }
+.beats.editable { gap: 2px; }
+.dot-btn { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; border: 0; background: none; cursor: pointer; }
+.beats.editable .dot { width: 18px; height: 18px; }
+.beats.editable .dot[data-level="3"] { width: 28px; height: 28px; border-width: 2px; }
+.beats.editable .dot[data-level="2"] { width: 23px; height: 23px; }
+.metro-train { display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--muted); }
+.metro-train label { display: flex; flex-wrap: wrap; align-items: center; column-gap: 4px; row-gap: 6px; }
+.metro-train span { white-space: nowrap; display: flex; align-items: center; gap: 4px; }
+.metro-train input { width: 46px; min-height: 36px; padding: 0 6px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font: inherit; }
 .bpm-row { display: flex; align-items: center; justify-content: center; gap: 24px; }
 .bpm { display: flex; flex-direction: column; align-items: center; min-width: 96px; }
 .bpm-value { font-size: 56px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
@@ -260,7 +273,8 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .metro.mini .bpm-value { font-size: 24px; }
 .metro.mini .beats { flex: 1; justify-content: flex-end; gap: 4px; }
 .metro.mini .dot { width: 10px; height: 10px; }
-.metro.mini .dot.first { width: 12px; height: 12px; }
+.metro.mini .dot[data-level="3"] { width: 12px; height: 12px; }
+.metro.mini .dot[data-level="2"] { width: 11px; height: 11px; }
 .metronome-view { flex: 1; display: flex; flex-direction: column; gap: 12px; }
 .stage.metro-stage { flex: none; min-height: 0; padding: 8px; }
 .beat-count { font-size: 64px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; color: var(--muted); }

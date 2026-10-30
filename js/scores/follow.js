@@ -83,7 +83,11 @@ export class FollowController {
     this.onBar?.(ev.time, b);
   }
 
-  /** Current position: { playPos, frac } (frac 0..1 within the measure). */
+  /**
+   * Current position: { playPos, frac, next, left, beat } — frac 0..1 within
+   * the measure, next the play position coming after it, left the seconds
+   * until it starts, beat the seconds per beat.
+   */
   position() {
     const ctx = getContext();
     const now = ctx.currentTime - (ctx.outputLatency || 0);
@@ -94,7 +98,10 @@ export class FollowController {
     const b = this.bars.get(this.curBar);
     if (!b) return { playPos: this.startPos, frac: 0 };
     const dur = (b.beats * 60) / b.bpm;
-    return { playPos: b.pos, frac: Math.max(0, Math.min(0.999, (now - b.time) / dur)) };
+    // The bar after this one is planned before the metronome asks for it.
+    if (!this.bars.get(this.curBar + 1) && !this.pending) this.pending = this.plan.next().value ?? null;
+    const next = (this.bars.get(this.curBar + 1) ?? this.pending)?.pos;
+    return { playPos: b.pos, frac: Math.max(0, Math.min(0.999, (now - b.time) / dur)), next, left: b.time + dur - now, beat: 60 / b.bpm };
   }
 
   frame() {
@@ -113,6 +120,7 @@ export class FollowController {
     cur.index = this.indices[pos];
     const scale = cur.bpm / this.flat.measures[cur.index].bpm;
     const nextPos = pos + 1;
+    this.pending = null;
     if (nextPos >= this.indices.length) { this.plan = (function* () {})(); return; }
     this.plan = this.makePlan(nextPos, Math.round(this.flat.measures[this.indices[nextPos]].bpm * scale));
     // A bar already scheduled ahead follows the new plan too.

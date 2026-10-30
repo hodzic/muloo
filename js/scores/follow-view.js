@@ -1,7 +1,7 @@
 // Auto-scroll view (DESIGN.md §5.4a): one or two rows of music zoomed to the
 // view height. The playhead sits about a third of the way across while the
 // row pans under it; at the end of a row the next row in playing order
-// glides up. Driven by setPosition(); knows nothing about timing.
+// glides up, a beat early. Driven by setPosition(); knows nothing about timing.
 
 const PLAYHEAD = 1 / 3;
 const MAX_DPR = 2;
@@ -14,6 +14,9 @@ const MIN_VISIBLE_ROW = 0.4;
 // ready before it glides in (drawing one can take longer than a beat).
 const PREFETCH_ROWS = 2;
 const SWIPE_PX = 40;
+// While playing, the next row glides in this long before its first measure
+// (at least a beat), so it can be read ahead.
+const LEAD_S = 0.5;
 
 export class FollowView {
   /**
@@ -71,7 +74,11 @@ export class FollowView {
     this.render(true);
   }
 
-  /** pos: { playPos, frac } — position in the playing order, frac 0..1 within the measure. */
+  /**
+   * pos: { playPos, frac } — position in the playing order, frac 0..1 within
+   * the measure. While playing also { next, left, beat }: the next play
+   * position, seconds until it, seconds per beat.
+   */
   setPosition(pos) {
     const prev = this.pos;
     this.pos = pos;
@@ -89,9 +96,17 @@ export class FollowView {
     this.cueTimer = setTimeout(() => { this.cueEl.hidden = true; }, 1500);
   }
 
+  /** Play position the rows are laid out from: the next one once its row is due. */
+  shownPos() {
+    const p = this.pos;
+    if (!p || p.next == null || p.left == null || p.frac < 0.5) return p?.playPos ?? 0;
+    const sys = (q) => this.flat.measures[this.indices[q]]?.system;
+    return p.left <= Math.max(LEAD_S, p.beat ?? 0) && sys(p.next) !== sys(p.playPos) ? p.next : p.playPos;
+  }
+
   /** Systems to show: the current one, then the next ones in playing order. */
   visibleSystems(count = this.rows) {
-    const pos = this.pos?.playPos ?? 0;
+    const pos = this.shownPos();
     const out = [];
     for (let p = pos; p < this.indices.length && out.length < count; p++) {
       const k = this.flat.measures[this.indices[p]].system;
@@ -163,10 +178,12 @@ export class FollowView {
     }
     const cur = this.slots[0];
     if (!cur?.ready) return;
-    const m = this.pos ? this.flat.measures[this.indices[this.pos.playPos]] : this.flat.measures[this.flat.systems[cur.system].first];
-    const frac = this.pos?.frac ?? 0;
+    const shown = this.shownPos();
+    const early = this.pos && shown !== this.pos.playPos; // next row already up
+    const m = this.pos ? this.flat.measures[this.indices[shown]] : this.flat.measures[this.flat.systems[cur.system].first];
+    const frac = early ? 0 : this.pos?.frac ?? 0;
     // The current measure number, always on screen while playing.
-    const label = `m.${m.n}`;
+    const label = `m.${this.pos ? this.flat.measures[this.indices[this.pos.playPos]].n : m.n}`;
     if (this.measureEl.textContent !== label) this.measureEl.textContent = label;
     const xPts = m.x0 + frac * (m.x1 - m.x0);
     const px = xPts * cur.scale;

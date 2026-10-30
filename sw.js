@@ -1,7 +1,7 @@
 // Service worker: cache-first, versioned (DESIGN.md §8).
 // Run `npm run bump` whenever a shell file changes: it sets CACHE to the new version, so clients get the update toast.
 
-const CACHE = 'muloo-2026-10-29d';
+const CACHE = 'muloo-2026-10-30a';
 const INBOX = 'muloo-inbox';
 const OWN = /^(muloo-|gp-v)/; // this app's caches, old names included
 
@@ -132,7 +132,8 @@ self.addEventListener('fetch', (event) => {
     const hit = await cache.match(req, { ignoreSearch: req.mode === 'navigate' });
     if (hit) return hit;
     try {
-      const res = await fetch(req);
+      // revalidate: the browser may still hold the previous version's file over HTTP (GitHub Pages: 10 minutes)
+      const res = await fetch(req.mode === 'navigate' ? new Request(req.url, { cache: 'no-cache' }) : new Request(req, { cache: 'no-cache' }));
       if (res.ok && res.type === 'basic') cache.put(req, res.clone());
       return res;
     } catch (e) {

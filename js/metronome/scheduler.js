@@ -137,12 +137,12 @@ export class Metronome {
     const a = this.accents[this.timeSig];
     return a?.length === this.beatsPerBar ? a : defaultAccents(this.timeSig);
   }
-  /** Gap training and speed-up only apply to plain clicks, not a score driving the tempo. */
+  /** Speed-up only applies to plain clicks, not a score driving the tempo. */
   get trainer() { return !this.barHook; }
   /** Bar `bar` (0-based, after the count-in) is one of the silent ones. */
   isSilentBar(bar) {
     const { play, mute } = this.gap;
-    return this.trainer && mute > 0 && bar >= 0 && bar % (play + mute) >= play;
+    return mute > 0 && bar >= 0 && bar % (play + mute) >= play;
   }
 
   /** Cycle the level of beat `i` (0-based): accent → medium → normal → silent. */

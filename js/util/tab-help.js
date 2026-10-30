@@ -24,7 +24,7 @@ const HELP = {
     <ul>
       <li>Gap: e.g. 4 bars on, 2 bars silent. Keep playing through the silent bars and see if you land with the click when it comes back. Set silent to 0 to turn it off.</li>
       <li>Speed up: add BPM every few bars, up to a top tempo (empty for no limit). Set it to 0 to turn it off. On Stop the tempo goes back to where it started.</li>
-      <li>Gap and speed up don't apply when a score drives the metronome on the Practice tab; it has its own loop speed-up.</li>
+      <li>Gap also works with a score on the Practice tab: the score keeps scrolling through the silent bars. Speed up doesn't apply there; Practice has its own loop speed-up.</li>
     </ul>`,
 
   practice: `
@@ -40,6 +40,7 @@ const HELP = {
       <li>Press ▶ on the metronome bar: after the count-in, the score scrolls with the beat. The orange line is where you are; the badge in the corner shows the measure.</li>
       <li>1 row or 2 rows: how much of the score to show at once.</li>
       <li>⏮ goes back to the first measure (or the start of the loop).</li>
+      <li>The Gap setting on the Metronome tab works here too: the click goes quiet for the silent bars while the score keeps scrolling.</li>
       <li>Full screen (the corner button by the status line) hides everything else; tap it again to come back.</li>
     </ul>
     <h3>Moving around</h3>

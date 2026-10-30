@@ -16,9 +16,13 @@ export function initMetronome() {
   initialized = true;
   metronome.set({ ...settings.get('metronome', {}) });
   let saveTimer = null;
+  const save = () => { clearTimeout(saveTimer); saveTimer = null; settings.set('metronome', metronome.getState()); };
+  // Don't lose the last change if the app is closed straight after it.
+  addEventListener('pagehide', () => { if (saveTimer) save(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden && saveTimer) save(); });
   metronome.onChange(() => {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => settings.set('metronome', metronome.getState()), 300);
+    saveTimer = setTimeout(save, 300);
     if (metronome.running) holdWakeLock('metronome'); else releaseWakeLock('metronome');
   });
 }

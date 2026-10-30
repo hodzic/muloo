@@ -82,6 +82,14 @@ export function mountScorePanel(toolbarEl, stageEl, { onChange } = {}) {
   $('.ps-measures', root).addEventListener('change', (e) => setSubset(e.target.value));
   document.addEventListener('keydown', onKey);
   metronome.onChange(renderStatus);
+  metronome.onChange(saveScoreTempo);
+}
+
+// The tempo you pick for a score is kept for it; otherwise the map's tempo.
+const tempoKey = () => `practice.tempo.${doc.score.id}`;
+function saveScoreTempo() {
+  if (!active || !doc || metronome.running || ctrl?.running) return;
+  if (settings.get(tempoKey()) !== metronome.bpm) settings.set(tempoKey(), metronome.bpm);
 }
 
 export async function enterScorePanel() {
@@ -221,9 +229,10 @@ function makeView() {
     onEnd: () => { renderStatus(); },
   });
   view.setPosition({ playPos: 0, frac: 0 });
-  // Start at the score's tempo and time signature; the metronome bar adjusts from there.
+  // Start at the tempo last used for this score (else the map's) and its
+  // time signature; the metronome bar adjusts from there.
   const first = doc.flat.measures[doc.indices[0]];
-  if (first) metronome.set({ bpm: first.bpm, timeSig: first.timeSig });
+  if (first) metronome.set({ bpm: settings.get(tempoKey(), first.bpm), timeSig: first.timeSig });
   installOverride();
 }
 

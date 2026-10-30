@@ -4,7 +4,7 @@ import { listInputs, setInputDevice, setInputGainDb, looksBluetooth, getInput, o
 import { settings } from './storage/db.js';
 import { $, escapeHtml, formatBytes } from './util/dom.js';
 
-export const APP_VERSION = '2026-10-30c';
+export const APP_VERSION = '2026-10-30d';
 
 const METER_FLOOR_DB = -60;
 const CLIP_HOLD_MS = 2000;

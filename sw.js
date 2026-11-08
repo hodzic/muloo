@@ -3,7 +3,7 @@
 // Run `npm run bump` whenever a shell file changes: it sets CACHE to the new version, so clients get the update toast.
 importScripts('/shared/sw-core.js');
 
-const CACHE = 'muloo-2026-11-08a';
+const CACHE = 'muloo-2026-11-08b';
 const INBOX = 'muloo-inbox';
 const OWN = /^(muloo-|gp-v)/; // this app's caches, old names included
 
@@ -32,6 +32,7 @@ const SHELL = [
   'js/editor/editor.js',
   'js/library/dialogs.js',
   'js/library/export.js',
+  'js/library/import.js',
   'vendor/mp4-muxer/mp4-muxer.mjs',
   'vendor/webm-muxer/webm-muxer.mjs',
   'js/scores/scores.js',
@@ -94,19 +95,22 @@ appWorker({
     const req = event.request;
     if (url.origin !== location.origin) return false;
     // Android share sheet → MuLoo (W4). Files wait in the inbox until the
-    // Scores tab imports them.
+    // Scores tab (PDFs) or the Recordings tab (audio) imports them.
     if (req.method === 'POST' && url.pathname.endsWith('/share-target')) {
       event.respondWith((async () => {
         const form = await req.formData();
         const inbox = await caches.open(INBOX);
-        for (const file of form.getAll('score')) {
+        let audio = false;
+        for (const file of [...form.getAll('score'), ...form.getAll('audio')]) {
           if (!(file instanceof File)) continue;
-          const key = `inbox/${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          const isAudio = /^audio\//.test(file.type) || /\.(m4a|mp3|wav|webm|ogg|opus|aac|flac)$/i.test(file.name);
+          audio ||= isAudio;
+          const key = `${isAudio ? 'inbox-audio' : 'inbox'}/${Date.now()}-${Math.random().toString(36).slice(2)}`;
           await inbox.put(key, new Response(file, {
-            headers: { 'Content-Type': file.type || 'application/pdf', 'X-File-Name': encodeURIComponent(file.name) },
+            headers: { 'Content-Type': file.type || (isAudio ? 'audio/mp4' : 'application/pdf'), 'X-File-Name': encodeURIComponent(file.name) },
           }));
         }
-        return Response.redirect('./?shared=1#scores', 303);
+        return Response.redirect(`./?shared=1#${audio ? 'recordings' : 'scores'}`, 303);
       })());
       return true;
     }

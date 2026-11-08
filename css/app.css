@@ -338,6 +338,8 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .is-recording .tabbar [data-tab="practice"] { color: var(--bad); }
 
 /* Recordings list */
+.rec-tools { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+.rec-tools .btn { padding: 0 14px; display: inline-flex; align-items: center; cursor: pointer; }
 .rec-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .rec { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 12px; background: var(--surface); border-radius: var(--radius); border: 1px solid transparent; }
 .rec.highlight { border-color: var(--accent); }

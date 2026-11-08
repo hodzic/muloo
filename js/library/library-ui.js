@@ -6,7 +6,9 @@ import { onRecorderChange } from '../recorder/recorder.js';
 import { openPlayer, closePlayer, pausePlayer } from '../player/player.js';
 import { openEditor, closeEditor, pauseEditor } from '../editor/editor.js';
 import { openShareDialog } from './dialogs.js';
-import { $, escapeHtml, formatBytes } from '../util/dom.js';
+import { importAudio, AUDIO_ACCEPT, isAudioFile } from './import.js';
+import { takeSharedFiles } from '../scores/scores.js';
+import { $, escapeHtml, formatBytes, toast } from '../util/dom.js';
 import { openTabHelp } from '../util/tab-help.js';
 
 let root;
@@ -18,16 +20,48 @@ const fmtDate = (ms) => new Date(ms).toLocaleString(undefined, { dateStyle: 'med
 
 export function mount(el) {
   root = el;
-  el.innerHTML = `<ul class="rec-list" aria-label="Recordings"></ul><div class="player-host" hidden></div>`;
+  el.innerHTML = `
+    <div class="rec-tools">
+      <label class="btn rec-import">Import audio<input type="file" accept="${AUDIO_ACCEPT}" multiple hidden></label>
+    </div>
+    <ul class="rec-list" aria-label="Recordings"></ul><div class="player-host" hidden></div>`;
   $('.rec-list', el).addEventListener('click', onListClick);
+  $('.rec-import input', el).addEventListener('change', async (e) => {
+    const files = [...e.target.files];
+    e.target.value = '';
+    await importFiles(files);
+  });
   onRecorderChange(() => { if (active && $('.player-host', root).hidden) render(); });
 }
 
-export function enter({ recordingId, open = false } = {}) {
+export async function enter({ recordingId, open = false, files } = {}) {
   active = true;
   if (recordingId) highlightId = recordingId;
   if (recordingId && open) showPlayer(recordingId);
   else if ($('.player-host', root).hidden) render();
+  // Audio shared to MuLoo or opened with it.
+  const shared = [...(files ?? []), ...(await takeSharedFiles('audio').catch(() => []))];
+  if (shared.length) await importFiles(shared);
+}
+
+/** Import audio files as recordings; opens the take if there was just one. */
+async function importFiles(files) {
+  let last = null, n = 0;
+  for (const f of files) {
+    if (!isAudioFile(f)) { toast(`${f.name}: not an audio file`); continue; }
+    toast(`Importing ${f.name}…`);
+    try {
+      last = await importAudio(f);
+      n++;
+    } catch (e) {
+      console.error(e);
+      toast(e.message);
+    }
+  }
+  if (!n) return;
+  toast(n === 1 ? `Imported “${last.name}”${last.loopOn ? ' with its loop' : ''}` : `Imported ${n} recordings`);
+  if (n === 1) showPlayer(last.id);
+  else { highlightId = last.id; showList(); }
 }
 
 export const showHelp = () => openTabHelp('recordings');
@@ -43,6 +77,7 @@ function showList() {
   closeEditor();
   $('.player-host', root).hidden = true;
   $('.rec-list', root).hidden = false;
+  $('.rec-tools', root).hidden = false;
   render();
 }
 
@@ -50,6 +85,7 @@ function showPlayer(id) {
   closeEditor();
   highlightId = id;
   $('.rec-list', root).hidden = true;
+  $('.rec-tools', root).hidden = true;
   const host = $('.player-host', root);
   host.hidden = false;
   openPlayer(host, id, { onClose: showList, onEdit: showEditor });
@@ -70,7 +106,7 @@ async function render() {
     return;
   }
   if (!recs.length) {
-    list.innerHTML = `<li class="placeholder"><h2>No recordings yet</h2><p>Record a take from the Practice tab.</p></li>`;
+    list.innerHTML = `<li class="placeholder"><h2>No recordings yet</h2><p>Record a take from the Practice tab, or import an audio file.</p></li>`;
     return;
   }
   list.innerHTML = recs.map((r) => {

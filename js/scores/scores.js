@@ -99,15 +99,21 @@ export async function renderPage(pdf, n, cssWidth, dpr = devicePixelRatio || 1) 
   return canvas;
 }
 
-/** PDFs shared to MuLoo from Android's share sheet, stashed by sw.js. */
-export async function takeSharedFiles() {
+/**
+ * Files shared to MuLoo from Android's share sheet, stashed by sw.js:
+ * kind 'score' (PDFs, for Scores) or 'audio' (for Recordings).
+ */
+export async function takeSharedFiles(kind = 'score') {
   if (!('caches' in self)) return [];
   const inbox = await caches.open('muloo-inbox');
   const files = [];
   for (const req of await inbox.keys()) {
+    const isAudio = new URL(req.url).pathname.includes('/inbox-audio/');
+    if (isAudio !== (kind === 'audio')) continue;
     const res = await inbox.match(req);
-    const name = decodeURIComponent(res.headers.get('X-File-Name') || 'Shared score.pdf');
-    files.push(new File([await res.blob()], name, { type: 'application/pdf' }));
+    const type = res.headers.get('Content-Type') || (isAudio ? '' : 'application/pdf');
+    const name = decodeURIComponent(res.headers.get('X-File-Name') || (isAudio ? 'Shared audio' : 'Shared score.pdf'));
+    files.push(new File([await res.blob()], name, { type }));
     await inbox.delete(req);
   }
   return files;

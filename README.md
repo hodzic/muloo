@@ -45,6 +45,7 @@ Auto-scroll needs a score map (rows, measures, playing order). MuLoo detects one
 - **Beat mode in a worker:** the analysis runs in a Web Worker, because the spec'd 4×-padded FFT takes about 40 ms.
 - **Portrait zoom:** in portrait, auto-scroll zooms to fit at least 40% of a row's width instead of the full row height. Landscape zooms to the row height, as specified.
 - **Re-scroll data:** recordings made with a score also store the start time of each bar (`scoreTrack`). Playback re-scroll follows those times, so it handles loops, tempo ramps and resyncs.
+- **Importing and the MuLoo tag:** Recordings imports any audio file the browser can decode (button, share sheet, Files app), mixed down to mono. Shared takes end with a small tag (`MULOO1`, length, JSON with name, loop, speed, tempo and score link by PDF hash or title), wrapped so other players skip it: an MP4 `free` box, a WebM Void element or a WAV `mulo` chunk. See js/library/import.js.
 - **Muxers:** mp4-muxer and webm-muxer are frozen copies; upstream has moved to Mediabunny.
 
 ## Deploying

@@ -79,8 +79,16 @@ function ensureAudioGraph() {
   source.connect(gain).connect(analyser).connect(ctx.destination);
   audio.addEventListener('play', onPlayState);
   audio.addEventListener('pause', onPlayState);
+  // The loop seam is timed from animation frames, which stop with the screen
+  // off: then the element's own time updates (a few a second) keep the loop.
+  audio.addEventListener('timeupdate', () => {
+    if (loopActive() && !seamPending && !audio.paused && audio.currentTime >= loop.b) audio.currentTime = loop.a;
+  });
   audio.addEventListener('ended', () => {
-    if (loopActive()) { audio.currentTime = loop.a; audio.play(); } else onPlayState();
+    // A loop that runs to the end (or whose seam was missed, e.g. with the
+    // screen off) restarts from here. Reaching the end paused the element,
+    // which let go of the audio: take it back or it is suspended mid-loop.
+    if (loopActive()) { holdAudio('player'); audio.currentTime = loop.a; audio.play(); } else onPlayState();
   });
 }
 
@@ -359,7 +367,8 @@ function onPlayState() {
     : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg>';
   b.setAttribute('aria-label', playing ? 'Pause' : 'Play');
   if (playing) holdWakeLock('player'); else releaseWakeLock('player');
-  if (!playing) releaseAudio('player');
+  // Whatever started playback, audio must keep running while it plays.
+  if (playing) holdAudio('player').catch(() => {}); else releaseAudio('player');
 }
 
 function onKey(e) {

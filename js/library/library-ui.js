@@ -1,7 +1,7 @@
 // Recordings tab: newest take first; tap a take to open it in the Player,
 // which leads on to the Editor. Share and delete from the list too.
 
-import { listRecordings, deleteRecording, getRecording, durationSec, sizeBytes } from '../storage/recordings.js';
+import { listRecordings, deleteRecording, getRecording, duplicateRecording, durationSec, sizeBytes } from '../storage/recordings.js';
 import { onRecorderChange } from '../recorder/recorder.js';
 import { openPlayer, closePlayer, pausePlayer } from '../player/player.js';
 import { openEditor, closeEditor, pauseEditor } from '../editor/editor.js';
@@ -123,6 +123,9 @@ async function render() {
           <div class="rec-name">${escapeHtml(r.name)}${r.recovered ? ' <span class="tag">recovered</span>' : ''} ${loop} ${parts}</div>
           <div class="rec-meta">${escapeHtml(meta)}</div>
         </button>
+        <button class="btn icon duplicate" aria-label="Duplicate" title="Duplicate" ${inProgress ? 'disabled' : ''}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 9h11v11H9zM5 15H4V4h11v1"/></svg>
+        </button>
         <button class="btn icon share" aria-label="Share" ${inProgress ? 'disabled' : ''}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 13v7h14v-7"/></svg>
         </button>
@@ -143,6 +146,17 @@ async function onListClick(e) {
     if (!confirm(`Delete “${name}”?`)) return;
     await deleteRecording(id);
     render();
+  } else if (e.target.closest('.duplicate')) {
+    const rec = await getRecording(id);
+    if (!rec) return;
+    try {
+      const copy = await duplicateRecording(rec);
+      highlightId = copy.id;
+      toast(`Duplicated as “${copy.name}”`);
+      render();
+    } catch (err) {
+      toast(`Could not duplicate: ${err.message}`);
+    }
   } else if (e.target.closest('.share')) {
     const rec = await getRecording(id);
     if (rec) openShareDialog(rec);

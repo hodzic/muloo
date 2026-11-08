@@ -85,7 +85,7 @@ const HELP = {
   recordings: `
     <h2>Recordings</h2>
     <ul>
-      <li>Newest takes first. Tap one to play it; share or delete it from the list.</li>
+      <li>Newest takes first. Tap one to play it; duplicate, share or delete it from the list. A duplicate keeps the parts, loop and speed, so you can try things on the copy.</li>
       <li>Import audio adds an audio file (m4a, mp3, wav, webm, ogg…) as a take. You can also share an audio file to MuLoo from another app.</li>
       <li>A take shared from MuLoo keeps its loop, speed and linked score: when a friend imports it in MuLoo, they get the same loop. Other players just play the audio. The score link works if they have the same score.</li>
     </ul>

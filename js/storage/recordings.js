@@ -90,6 +90,22 @@ export async function mergeParts(rec) {
   return updated;
 }
 
+/** A copy of `rec` with its parts, listed as new. Resolves to the copy. */
+export async function duplicateRecording(rec) {
+  const id = crypto.randomUUID(), now = Date.now();
+  const parts = [];
+  for (const p of rec.parts ?? []) {
+    const part = await get('recordings', p.id);
+    if (!part) continue;
+    const copy = { ...part, id: crypto.randomUUID(), partOf: id, createdAt: now };
+    await replacePcm(copy, await loadPcm(p.id));
+    parts.push({ ...p, id: copy.id });
+  }
+  const copy = { ...rec, id, name: `${rec.name} (copy)`.slice(0, 120), createdAt: now, ...(rec.parts ? { parts } : {}) };
+  delete copy.recovered;
+  return replacePcm(copy, await loadPcm(rec.id));
+}
+
 export async function wavBlob(rec) {
   return new Blob([encodeWav(await loadMix(rec), rec.sampleRate)], { type: 'audio/wav' });
 }

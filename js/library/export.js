@@ -128,8 +128,12 @@ export function download(blob, fileName) {
  * NotAllowedError when the tap that started it has expired (long encodes);
  * the caller then asks for another tap.
  */
+// Chrome only shares files whose type is on its list, which has
+// audio/x-m4a but not audio/mp4.
+const SHARE_TYPES = { 'audio/mp4': 'audio/x-m4a' };
+
 export async function shareOrDownload(blob, fileName, title) {
-  const file = new File([blob], fileName, { type: blob.type });
+  const file = new File([blob], fileName, { type: SHARE_TYPES[blob.type] ?? blob.type });
   if (navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title });

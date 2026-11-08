@@ -3,7 +3,7 @@
 import { loadPcm, durationSec } from '../storage/recordings.js';
 import { listScores } from '../scores/scores.js';
 import { encodeWav } from '../util/wav.js';
-import { encodeForSharing, pickFormat, shareFileName, shareOrDownload } from './export.js';
+import { encodeForSharing, pickFormat, shareFileName, shareOrDownload, download } from './export.js';
 import { withTag, tagFor } from './import.js';
 import { $, escapeHtml, formatBytes, toast } from '../util/dom.js';
 
@@ -93,7 +93,18 @@ async function deliver(d, blob, name, title) {
     // The tap expired during a long encode: ask for a fresh one.
     const now = $('.share-now', d);
     now.hidden = false;
-    now.onclick = () => { now.hidden = true; deliver(d, blob, name, title).catch((err) => toast(`Could not share: ${err.message}`)); };
+    now.onclick = async () => {
+      now.hidden = true;
+      try {
+        const how = await shareOrDownload(blob, name, title);
+        if (how !== 'cancelled') d.close();
+      } catch (err) {
+        // Refused even straight after a tap: save the file instead.
+        download(blob, name);
+        toast(`Sharing isn't available for this file, so it was saved: ${name}`);
+        d.close();
+      }
+    };
   }
 }
 

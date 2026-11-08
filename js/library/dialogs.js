@@ -4,6 +4,7 @@ import { loadPcm, durationSec } from '../storage/recordings.js';
 import { listScores } from '../scores/scores.js';
 import { encodeWav } from '../util/wav.js';
 import { encodeForSharing, pickFormat, shareFileName, shareOrDownload } from './export.js';
+import { withTag, tagFor } from './import.js';
 import { $, escapeHtml, formatBytes, toast } from '../util/dom.js';
 
 const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -66,6 +67,9 @@ export async function openShareDialog(rec) {
           onProgress: (f) => progress(f, `Encoding… ${Math.round(f * 100)}%`),
         });
       }
+      // Loop, speed and score link ride along for a friend's MuLoo.
+      const meta = await tagFor(rec, what === 'loop' ? [rec.loopA, rec.loopB] : null);
+      result.blob = await withTag(result.blob, result.ext, meta);
       const name = shareFileName(rec, result.ext, suffix);
       progress(1, `${name} · ${formatBytes(result.blob.size)}`);
       await deliver(d, result.blob, name, rec.name);

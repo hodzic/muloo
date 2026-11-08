@@ -20,10 +20,14 @@
     "enctype": "multipart/form-data",
     "params": {
       "title": "title",
-      "files": [{ "name": "score", "accept": ["application/pdf", ".pdf"] }]
+      "files": [
+        { "name": "score", "accept": ["application/pdf", ".pdf"] },
+        { "name": "audio", "accept": ["audio/*", ".m4a", ".mp3", ".wav", ".webm", ".ogg", ".opus", ".aac", ".flac"] }
+      ]
     }
   },
   "file_handlers": [
-    { "action": "/muloo/#scores", "accept": { "application/pdf": [".pdf"] } }
+    { "action": "/muloo/#scores", "accept": { "application/pdf": [".pdf"] } },
+    { "action": "/muloo/#recordings", "accept": { "audio/*": [".m4a", ".mp3", ".wav", ".webm", ".ogg", ".opus", ".aac", ".flac"] } }
   ]
 }

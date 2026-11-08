@@ -89,10 +89,14 @@ async function init() {
     console.warn('Recording recovery failed', e);
   }
 
-  // PDFs opened with MuLoo from the Files app (manifest file_handlers).
+  // PDFs and audio opened with MuLoo from the Files app (manifest file_handlers).
   window.launchQueue?.setConsumer(async ({ files }) => {
     if (!files?.length) return;
-    show('scores', { files: await Promise.all(files.map((h) => h.getFile())) });
+    const all = await Promise.all(files.map((h) => h.getFile()));
+    const pdfs = all.filter((f) => f.type === 'application/pdf' || /\.pdf$/i.test(f.name));
+    const audio = all.filter((f) => !pdfs.includes(f));
+    if (pdfs.length) show('scores', { files: pdfs });
+    if (audio.length) show('recordings', { files: audio });
   });
 
   const fromHash = location.hash.slice(1);

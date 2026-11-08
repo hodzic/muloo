@@ -98,7 +98,7 @@ const HELP = {
     </ul>
     <h3>Overdub</h3>
     <ul>
-      <li>Overdub plays the take (from A if there is a loop) and records the microphone, so you can add a part on top. With a count-in (the menu beside it, shared with recording) the take starts on the beat after the clicks, at the take's tempo. Use headphones, or the take is recorded again through the mic. Tap Stop overdub, or play to the end.</li>
+      <li>Overdub plays the take (from A if there is a loop) and records the microphone, so you can add a part on top. With a count-in (the menu beside it, shared with recording) the take starts on the beat after the clicks, at the take's tempo. The count-in clicks even with the metronome on Visual only, and shows on the waveform. Use headphones, or the take is recorded again through the mic. Tap Stop overdub, or play to the end.</li>
       <li>Bluetooth headphones delay the sound, so the new part usually comes out a little late. Tap Align: the waveform zooms to 3 seconds, the rest grey and the part orange. Drag to slide the part until the hits line up, or use ◀ 10 ms and 10 ms ▶; play to check.</li>
       <li>With the loop on, the button says Overdub over loop: the loop repeats for as long as you play. When you stop, you get a new take with the loop repeated that many times, the earlier parts kept as parts, and your new part on top; the original take stays as it was.</li>
       <li>Each part has its own volume; × deletes a part. If parts together get too loud, the whole mix is turned down instead of distorting. Sharing sends the mix; tick “Include the parts separately” to also send each part, so a friend’s MuLoo imports the take with its parts (other apps still play the mix). Editing mixes the parts into one track first.</li>

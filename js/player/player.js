@@ -2,10 +2,16 @@
 // a MediaElementAudioSourceNode for the output meter and loop-seam fades.
 // The A/B loop is enforced from requestAnimationFrame. Loop points, loop
 // state and speed are remembered per recording.
+//
+// Overdub: record the mic while the take plays; the new part is stored on
+// its own (rec.parts) and the player plays the mix. No latency calibration:
+// the part is placed from the clocks and the output latency the browser
+// reports, then lined up by dragging it on the waveform.
 
 import { getContext, holdAudio, releaseAudio } from '../audio/context.js';
 import { readLevel } from '../audio/input.js';
-import { loadPcm, getRecording, saveRecording, durationSec } from '../storage/recordings.js';
+import { loadPcm, getRecording, saveRecording, loadParts, mixFrom, mergeParts, deleteRecording } from '../storage/recordings.js';
+import { startRecording, stopRecording, isRecording } from '../recorder/recorder.js';
 import { encodeWav } from '../util/wav.js';
 import { computePeaks, drawWaveform } from '../editor/waveform.js';
 import { holdWakeLock, releaseWakeLock } from '../util/wakelock.js';
@@ -24,6 +30,8 @@ const BACK_SEC = 5;
 const MIN_LOOP = 0.05;
 const HANDLE_HIT_PX = 24;
 const DRAG_PX = 8;
+const NUDGE_SEC = 0.01;
+const SYNC_SAMPLES = 120;
 
 let audio = null;
 let gain = null;
@@ -31,7 +39,12 @@ let analyser = null;
 
 let root = null;
 let rec = null;
-let pcm = null;
+let pcm = null; // what plays: the take with its parts mixed in
+let base = null; // the take's own audio
+let partAudio = new Map(); // part id → { pcm, rate }
+let overdub = null; // while recording a part: { recId, prevRate, prevLoopOn, syncs, stopping }
+let align = null; // while lining up a part: { id, restPeaks, partPeaks }
+let remixTimer = null;
 let url = null;
 let duration = 0;
 let peaks = null;
@@ -56,6 +69,7 @@ const COLORS = () => {
     handle: v('--accent'),
     labelText: v('--accent-text'),
     playhead: v('--text'),
+    part: 'rgb(255 159 28 / 0.75)',
   };
 };
 
@@ -88,7 +102,8 @@ function ensureAudioGraph() {
     // A loop that runs to the end (or whose seam was missed, e.g. with the
     // screen off) restarts from here. Reaching the end paused the element,
     // which let go of the audio: take it back or it is suspended mid-loop.
-    if (loopActive()) { holdAudio('player'); audio.currentTime = loop.a; audio.play(); } else onPlayState();
+    if (overdub) stopOverdub();
+    else if (loopActive()) { holdAudio('player'); audio.currentTime = loop.a; audio.play(); } else onPlayState();
   });
 }
 
@@ -106,16 +121,16 @@ export async function openPlayer(host, id, { onClose, onEdit } = {}) {
   try {
     rec = await getRecording(id);
     if (!rec) throw new Error('Recording not found');
-    pcm = await loadPcm(id);
+    base = await loadPcm(id);
+    partAudio = await loadParts(rec);
   } catch (e) {
     toast(`Could not open recording: ${e.message}`);
     close();
     return;
   }
-  duration = durationSec(rec);
-  url = URL.createObjectURL(new Blob([encodeWav(pcm, rec.sampleRate)], { type: 'audio/wav' }));
-  audio.src = url;
-  audio.playbackRate = rec.speed ?? 1;
+  pcm = mixFrom(rec, base, partAudio);
+  duration = pcm.length / rec.sampleRate;
+  setSource(rec.speed ?? 1);
   loop = { a: rec.loopA ?? null, b: rec.loopB ?? null, on: !!rec.loopOn && rec.loopA != null && rec.loopB != null };
   if (loop.on) audio.currentTime = loop.a;
 
@@ -129,9 +144,35 @@ export async function openPlayer(host, id, { onClose, onEdit } = {}) {
   raf = requestAnimationFrame(frame);
 }
 
+/** Point the audio element at `pcm`, keeping the position and play state. */
+function setSource(rate = audio.playbackRate) {
+  const t = audio.currentTime, playing = !audio.paused;
+  if (url) URL.revokeObjectURL(url);
+  url = URL.createObjectURL(new Blob([encodeWav(pcm, rec.sampleRate)], { type: 'audio/wav' }));
+  audio.src = url;
+  audio.playbackRate = rate;
+  if (t) audio.currentTime = Math.min(t, duration);
+  if (playing) audio.play().catch(() => {});
+}
+
+/** Mix again after a part moved or a volume changed. */
+function remix() {
+  clearTimeout(remixTimer);
+  remixTimer = null;
+  if (!rec) return;
+  pcm = mixFrom(rec, base, partAudio);
+  duration = pcm.length / rec.sampleRate;
+  setSource();
+  $('.dur', root).textContent = fmt(duration);
+  resizeCanvas();
+}
+const remixSoon = () => { clearTimeout(remixTimer); remixTimer = setTimeout(remix, 200); };
+
 /** Close the player without leaving a trace (no callback). */
 export function closePlayer() {
   if (!rec && !root) return;
+  if (overdub) stopOverdub();
+  clearTimeout(remixTimer);
   closeScore();
   flushSave();
   cancelAnimationFrame(raf);
@@ -146,11 +187,13 @@ export function closePlayer() {
   releaseWakeLock('player');
   releaseAudio('player');
   if (root) root.innerHTML = '';
-  rec = pcm = url = peaks = root = null;
+  rec = pcm = base = url = peaks = root = align = null;
+  partAudio = new Map();
   drag = null;
 }
 
 export function pausePlayer() {
+  if (overdub) stopOverdub();
   audio?.pause();
 }
 
@@ -258,6 +301,16 @@ function markup() {
         <span class="speed-value"></span>
         <button class="btn round speed-up" aria-label="Faster">+</button>
       </div>
+      <div class="p-parts">
+        <div class="p-layers"></div>
+        <div class="p-align" hidden>
+          <span class="p-align-text"></span>
+          <button class="btn p-nudge" data-d="-1" aria-label="10 ms earlier">◀ 10 ms</button>
+          <button class="btn p-nudge" data-d="1" aria-label="10 ms later">10 ms ▶</button>
+          <button class="btn p-align-done">Done</button>
+        </div>
+        <button class="btn wide p-overdub"><span class="rec-dot"></span> <span class="p-overdub-label">Overdub</span></button>
+      </div>
       <div class="transport">
         <button class="btn round to-a" aria-label="Return to A">${svg('M6 5v14M18 5l-9 7 9 7z')}</button>
         <button class="btn round primary play" aria-label="Play"></button>
@@ -276,11 +329,47 @@ function bind() {
     audio.pause();
     openShareDialog({ ...rec });
   });
-  $('.p-edit', root).addEventListener('click', () => {
+  $('.p-edit', root).addEventListener('click', async () => {
     if (!rec) return;
+    if (rec.parts?.length) {
+      if (!confirm('Editing mixes the overdub parts into one track; you can no longer move them or change their volume. Continue?')) return;
+      flushSave();
+      rec = await mergeParts(rec);
+    }
     const id = rec.id, cb = onEditCb;
     closePlayer();
     cb?.(id);
+  });
+  $('.p-overdub', root).addEventListener('click', () => (overdub ? stopOverdub() : startOverdub()));
+  $('.p-layers', root).addEventListener('input', (e) => {
+    const r = e.target.closest('[data-layer]');
+    if (!r || !rec) return;
+    const v = +e.target.value;
+    if (r.dataset.layer === 'base') rec.baseGain = v;
+    else rec.parts = rec.parts.map((p) => (p.id === r.dataset.layer ? { ...p, gain: v } : p));
+    remixSoon();
+    changed();
+  });
+  $('.p-layers', root).addEventListener('click', async (e) => {
+    const row = e.target.closest('[data-layer]');
+    if (!row || !rec) return;
+    const id = row.dataset.layer;
+    if (e.target.closest('.p-align-btn')) startAlign(align?.id === id ? null : id);
+    else if (e.target.closest('.p-del-part')) {
+      if (!confirm('Delete this part?')) return;
+      if (align?.id === id) startAlign(null);
+      rec.parts = rec.parts.filter((p) => p.id !== id);
+      partAudio.delete(id);
+      flushSave();
+      await deleteRecording(id);
+      remix();
+      renderControls();
+    }
+  });
+  $('.p-align', root).addEventListener('click', (e) => {
+    if (e.target.closest('.p-align-done')) { startAlign(null); return; }
+    const n = e.target.closest('.p-nudge');
+    if (n && align) movePart(align.id, +n.dataset.d * NUDGE_SEC, true);
   });
   $('.play', root).addEventListener('click', togglePlay);
   $('.back5', root).addEventListener('click', () => seek(audio.currentTime - BACK_SEC));
@@ -308,6 +397,7 @@ const loopActive = () => loop.on && loop.a != null && loop.b != null;
 
 async function togglePlay() {
   if (!rec) return;
+  if (overdub) { stopOverdub(); return; }
   if (!audio.paused) { audio.pause(); return; }
   await holdAudio('player');
   if (loopActive() && (audio.currentTime < loop.a || audio.currentTime >= loop.b)) audio.currentTime = loop.a;
@@ -340,7 +430,10 @@ function flushSave() {
   clearTimeout(saveTimer);
   saveTimer = null;
   if (!rec) return;
-  rec = { ...rec, loopA: loop.a, loopB: loop.b, loopOn: loop.on, speed: audio.playbackRate };
+  // While overdubbing the loop is off and speed 100% only for the take.
+  const loopOn = overdub ? overdub.prevLoopOn : loop.on;
+  const speed = overdub ? overdub.prevRate : audio.playbackRate;
+  rec = { ...rec, loopA: loop.a, loopB: loop.b, loopOn, speed };
   saveRecording(rec).catch((e) => console.warn('Could not save player state', e));
 }
 
@@ -355,7 +448,152 @@ function renderControls() {
   $('.loop-times', root).textContent = loop.a != null
     ? `A ${fmt(loop.a)}${loop.b != null ? ` – B ${fmt(loop.b)}` : ''}`
     : 'Drag to loop';
+  renderParts();
   onPlayState();
+}
+
+function renderParts() {
+  const busy = !!overdub;
+  $('.player', root).classList.toggle('overdubbing', busy);
+  for (const sel of ['.speed-down', '.speed-up', '.loop-toggle', '.clear-loop', '.p-edit', '.p-share', '.p-details', '.to-a', '.back5']) {
+    if (busy) $(sel, root).disabled = true;
+    else if (!['.speed-down', '.speed-up', '.loop-toggle'].includes(sel)) $(sel, root).disabled = false;
+  }
+  const ob = $('.p-overdub', root);
+  ob.classList.toggle('recording', busy);
+  ob.disabled = !!overdub?.stopping;
+  $('.p-overdub-label', root).textContent = busy ? 'Stop overdub' : 'Overdub';
+  const parts = rec.parts ?? [];
+  const layers = $('.p-layers', root);
+  const key = parts.map((p) => p.id).join() + (align?.id ?? '') + busy;
+  if (layers.dataset.key !== key) {
+    layers.dataset.key = key;
+    const vol = (v, label) => `<input type="range" min="0" max="1.5" step="0.05" value="${v}" aria-label="${label} volume">`;
+    layers.innerHTML = !parts.length ? '' : [
+      `<div class="p-layer" data-layer="base"><span>Original</span>${vol(rec.baseGain ?? 1, 'Original')}</div>`,
+      ...parts.map((p, i) => `
+        <div class="p-layer${align?.id === p.id ? ' aligning' : ''}" data-layer="${p.id}">
+          <span>Part ${i + 2}</span>${vol(p.gain, `Part ${i + 2}`)}
+          <button class="btn p-align-btn" aria-pressed="${align?.id === p.id}"${busy ? ' disabled' : ''}>Align</button>
+          <button class="btn icon p-del-part" aria-label="Delete part ${i + 2}"${busy ? ' disabled' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+        </div>`),
+    ].join('');
+  }
+  $('.p-align', root).hidden = !align;
+  if (align) {
+    const p = parts.find((q) => q.id === align.id);
+    $('.p-align-text', root).textContent = p ? `Starts at ${p.offset < 0 ? '−' : ''}${Math.abs(p.offset).toFixed(3)} s` : '';
+  }
+}
+
+// Overdub: play the take and record the mic; the new part becomes rec.parts[n].
+
+async function startOverdub() {
+  if (!rec || overdub) return;
+  if (isRecording()) { toast('Already recording.'); return; }
+  startAlign(null);
+  audio.pause();
+  // From the loop start if there is a loop, else from here (or the start, at the end).
+  const from = loop.a ?? (audio.currentTime >= duration - 0.05 ? 0 : audio.currentTime);
+  overdub = { recId: rec.id, prevRate: audio.playbackRate, prevLoopOn: loop.on, syncs: [], stopping: false };
+  // In time with the take: no loop jumps, normal speed.
+  loop.on = false;
+  audio.playbackRate = 1;
+  renderControls();
+  try {
+    await startRecording({ partOf: rec.id });
+  } catch (e) {
+    endOverdub();
+    toast(`Can't open the microphone: ${e.message}`);
+    return;
+  }
+  await holdAudio('player');
+  audio.currentTime = from;
+  try {
+    await audio.play();
+  } catch (e) {
+    toast(`Could not play: ${e.message}`);
+    stopOverdub();
+  }
+}
+
+/** Put the loop and speed back after an overdub. */
+function endOverdub() {
+  const od = overdub;
+  overdub = null;
+  if (!od || !audio) return;
+  audio.playbackRate = od.prevRate;
+  loop.on = od.prevLoopOn;
+  if (root) renderControls();
+}
+
+async function stopOverdub() {
+  const od = overdub;
+  if (!od || od.stopping) return;
+  od.stopping = true;
+  audio.pause();
+  if (root) renderControls();
+  const { rec: part, firstAt, error } = await stopRecording();
+  endOverdub();
+  if (error) toast(`Recording problem: ${error.message}`);
+  if (!part) return;
+  if (firstAt == null || !od.syncs.length) {
+    await deleteRecording(part.id).catch(() => {});
+    toast('Nothing was recorded.');
+    return;
+  }
+  // Where the part's first sample falls in the take: the take's position
+  // against performance.now() while playing (median of the frames), less
+  // the output latency the browser reports. Lined up by hand from there.
+  const syncs = [...od.syncs].sort((a, b) => a - b);
+  const ctx = getContext();
+  const lat = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
+  const offset = Math.round((syncs[syncs.length >> 1] + firstAt / 1000 - lat) * 1000) / 1000;
+  const entry = { id: part.id, offset, gain: 1 };
+  if (rec?.id === od.recId) {
+    rec.parts = [...(rec.parts ?? []), entry];
+    flushSave();
+    partAudio.set(part.id, { pcm: await loadPcm(part.id), rate: part.sampleRate });
+    if (!rec) return;
+    remix();
+    startAlign(part.id);
+    toast('Part added. Drag on the waveform to line it up, or use the 10 ms buttons.');
+  } else {
+    // The player was closed meanwhile: attach it to the stored take.
+    const take = await getRecording(od.recId);
+    if (take) await saveRecording({ ...take, parts: [...(take.parts ?? []), entry] });
+    else await deleteRecording(part.id).catch(() => {});
+  }
+}
+
+// Lining up a part: drag on the waveform moves it; the rest of the mix is
+// drawn as usual and the part on top.
+
+function startAlign(id) {
+  if (!rec) return;
+  align = id ? { id } : null;
+  if (align) prepareAlign();
+  renderControls();
+}
+
+function prepareAlign() {
+  if (!align || !root) return;
+  const p = rec.parts?.find((q) => q.id === align.id), a = partAudio.get(align.id);
+  if (!p || !a) { align = null; return; }
+  const c = $('.wave', root), cols = Math.max(1, Math.round(c.clientWidth));
+  const rest = mixFrom({ ...rec, parts: rec.parts.filter((q) => q.id !== p.id) }, base, partAudio);
+  align.restPeaks = computePeaks(rest, cols, 0, pcm.length);
+  const partDur = a.pcm.length / a.rate;
+  align.partDur = partDur;
+  align.partPeaks = computePeaks(a.pcm, Math.max(1, Math.round((cols * partDur) / duration)));
+}
+
+/** Move part `id` by `d` seconds; `now` remixes straight away. */
+function movePart(id, d, now = false) {
+  rec.parts = rec.parts.map((p) => (p.id === id ? { ...p, offset: Math.round((p.offset + d) * 1000) / 1000 } : p));
+  renderParts();
+  changed();
+  if (now) { remix(); } else remixSoon();
 }
 
 function onPlayState() {
@@ -388,8 +626,10 @@ const xToTime = (x) => {
 const timeToX = (t) => (t / duration) * $('.wave', root).clientWidth;
 
 function onPointerDown(e) {
+  if (overdub) return;
   const x = e.offsetX;
   e.currentTarget.setPointerCapture(e.pointerId);
+  if (align) { drag = { mode: 'shift', x0: x, last: x, moved: false }; return; }
   const near = (t) => t != null && Math.abs(timeToX(t) - x) <= HANDLE_HIT_PX;
   if (near(loop.b) && (!near(loop.a) || Math.abs(timeToX(loop.b) - x) < Math.abs(timeToX(loop.a) - x))) drag = { mode: 'b' };
   else if (near(loop.a)) drag = { mode: 'a' };
@@ -398,6 +638,16 @@ function onPointerDown(e) {
 
 function onPointerMove(e) {
   if (!drag) return;
+  if (drag.mode === 'shift') {
+    if (!drag.moved && Math.abs(e.offsetX - drag.x0) <= DRAG_PX) return;
+    drag.moved = true;
+    const d = ((e.offsetX - drag.last) / $('.wave', root).clientWidth) * duration;
+    drag.last = e.offsetX;
+    const id = align.id;
+    rec.parts = rec.parts.map((p) => (p.id === id ? { ...p, offset: p.offset + d } : p));
+    renderParts();
+    return;
+  }
   const t = xToTime(e.offsetX);
   if (drag.mode === 'pending' && Math.abs(e.offsetX - drag.x0) > DRAG_PX) {
     drag = { mode: 'region', t0: xToTime(drag.x0) };
@@ -414,6 +664,12 @@ function onPointerMove(e) {
 
 function onPointerUp(e) {
   if (!drag) return;
+  if (drag.mode === 'shift') {
+    if (!drag.moved) seek(xToTime(e.offsetX));
+    else movePart(align.id, 0, true);
+    drag = null;
+    return;
+  }
   if (drag.mode === 'pending') {
     seek(xToTime(e.offsetX));
   } else {
@@ -431,6 +687,7 @@ function resizeCanvas() {
   c.height = Math.round(c.clientHeight * dpr);
   peaks = computePeaks(pcm, Math.max(1, Math.round(c.clientWidth)));
   colors = COLORS();
+  prepareAlign();
 }
 
 function frame() {
@@ -459,15 +716,23 @@ function frame() {
     }
   }
 
+  // Overdub: the take's position against performance.now(), to place the part.
+  if (overdub && !overdub.stopping && !audio.paused) {
+    overdub.syncs.push(t - performance.now() / 1000);
+    if (overdub.syncs.length > SYNC_SAMPLES) overdub.syncs.shift();
+  }
+
   $('.pos', root).textContent = fmt(t);
   if (follow) follow.view.setPosition(trackPosition(t));
   if (peaks && duration > 0) {
-    drawWaveform($('.wave', root), peaks, {
-      a: loop.a != null ? loop.a / duration : null,
-      b: loop.b != null ? loop.b / duration : null,
+    const p = align?.partPeaks && rec.parts?.find((q) => q.id === align.id);
+    drawWaveform($('.wave', root), p ? align.restPeaks : peaks, {
+      a: !p && loop.a != null ? loop.a / duration : null,
+      b: !p && loop.b != null ? loop.b / duration : null,
       loopOn: loopActive(),
       playhead: t / duration,
       colors,
+      overlay: p ? { peaks: align.partPeaks, x: p.offset / duration, w: align.partDur / duration, color: colors.part } : null,
     });
   }
   if (!levelBuf) levelBuf = new Float32Array(analyser.fftSize);

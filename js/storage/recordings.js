@@ -2,19 +2,22 @@
 
 import { get, getAll, put, del, transaction } from './db.js';
 import { encodeWav } from '../util/wav.js';
+import { mixLayers } from '../editor/edit-ops.js';
 
 const chunkRange = (id) => IDBKeyRange.bound([id, 0], [id, Infinity]);
 
-/** Newest first. */
+/** Newest first. Overdub parts belong to their take and aren't listed. */
 export async function listRecordings() {
   const all = await getAll('recordings');
-  return all.sort((a, b) => b.createdAt - a.createdAt);
+  return all.filter((r) => !r.partOf).sort((a, b) => b.createdAt - a.createdAt);
 }
 
 export const getRecording = (id) => get('recordings', id);
 export const saveRecording = (rec) => put('recordings', rec);
 
 export async function deleteRecording(id) {
+  const rec = await get('recordings', id);
+  for (const p of rec?.parts ?? []) await deleteRecording(p.id);
   await del('pcmChunks', chunkRange(id));
   await del('recordings', id);
 }
@@ -52,8 +55,43 @@ export async function replacePcm(rec, pcm) {
   return updated;
 }
 
+// Overdubs: rec.parts = [{ id, offset, gain }], each part's audio stored as a
+// recording with partOf = the take; rec.baseGain is the original's volume.
+
+/** Audio of each part of `rec`: Map id → { pcm, rate }. */
+export async function loadParts(rec) {
+  const out = new Map();
+  for (const p of rec.parts ?? []) {
+    const part = await get('recordings', p.id);
+    if (part) out.set(p.id, { pcm: await loadPcm(p.id), rate: part.sampleRate });
+  }
+  return out;
+}
+
+/** The take with its parts mixed in, from already loaded audio. */
+export function mixFrom(rec, base, parts) {
+  if (!rec.parts?.length) return base;
+  const layers = rec.parts.filter((p) => parts.has(p.id)).map((p) => ({ ...parts.get(p.id), offset: p.offset, gain: p.gain }));
+  return mixLayers(base, rec.sampleRate, rec.baseGain ?? 1, layers);
+}
+
+/** The take as heard: the original with its parts mixed in. */
+export async function loadMix(rec) {
+  const base = await loadPcm(rec.id);
+  return rec.parts?.length ? mixFrom(rec, base, await loadParts(rec)) : base;
+}
+
+/** Replace the take's audio with the mix and drop the parts. Resolves to the saved recording. */
+export async function mergeParts(rec) {
+  const mix = await loadMix(rec);
+  const { parts = [], baseGain, ...rest } = rec;
+  const updated = await replacePcm(rest, mix);
+  for (const p of parts) await deleteRecording(p.id);
+  return updated;
+}
+
 export async function wavBlob(rec) {
-  return new Blob([encodeWav(await loadPcm(rec.id), rec.sampleRate)], { type: 'audio/wav' });
+  return new Blob([encodeWav(await loadMix(rec), rec.sampleRate)], { type: 'audio/wav' });
 }
 
 export const durationSec = (rec) => rec.lengthSamples / rec.sampleRate;
@@ -73,7 +111,9 @@ export async function recoverInterrupted() {
       await deleteRecording(rec.id);
       continue;
     }
-    await put('recordings', { ...rec, lengthSamples: length, status: 'done', recovered: true });
+    // An interrupted overdub becomes a take of its own.
+    const { partOf, ...done } = rec;
+    await put('recordings', { ...done, lengthSamples: length, status: 'done', recovered: true });
     recovered.push(rec);
   }
   return recovered;

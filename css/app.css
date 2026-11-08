@@ -373,6 +373,23 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .loop-row .clear-loop { width: var(--tap); flex: none; }
 .speed-row { display: flex; align-items: center; justify-content: center; gap: 16px; }
 .speed-value { min-width: 64px; text-align: center; font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+/* Overdub parts */
+.p-parts { display: flex; flex-direction: column; gap: 6px; }
+.p-layer { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+.p-layer > span { min-width: 56px; color: var(--muted); }
+.p-layer input[type=range] { flex: 1; min-width: 0; }
+.p-layer .btn { padding: 0 10px; min-height: 36px; }
+.p-layer .btn.icon { width: 36px; height: 36px; padding: 0; }
+.p-layer svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.p-layer.aligning > span { color: var(--accent); font-weight: 600; }
+.p-layer .p-align-btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.p-align { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 14px; }
+.p-align-text { flex: 1 1 100%; color: var(--accent); font-variant-numeric: tabular-nums; }
+.p-align .btn { flex: 1; padding: 0 8px; min-height: 40px; }
+.p-overdub .rec-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--bad, #e5484d); }
+.p-overdub.recording { border-color: var(--bad, #e5484d); color: var(--bad, #e5484d); }
+.p-overdub.recording .rec-dot { border-radius: 2px; }
+.player.overdubbing .wave { opacity: 0.85; }
 .transport { display: flex; align-items: center; justify-content: center; gap: 28px; padding-bottom: 4px; }
 .transport .btn.round { width: 60px; height: 60px; font-size: 16px; }
 .transport .play { width: 80px !important; height: 80px !important; }
@@ -572,3 +589,5 @@ body.practice-full .practice { gap: 6px; }
 .tap-hint { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; font-size: 14px; color: var(--muted); }
 .listening .tap-hint { display: none; }
 .tuner:not(.listening) .level { visibility: hidden; }
+/* With overdub parts the controls need the room: a shorter waveform keeps play on screen. */
+.player:has(.p-layer) .wave-wrap, .player.overdubbing .wave-wrap { flex: none; height: 150px; min-height: 0; }

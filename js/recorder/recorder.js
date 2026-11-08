@@ -50,10 +50,11 @@ addEventListener('beforeunload', (e) => {
  * keeps clicking; otherwise it only clicks the count-in.
  * `startMetronome(countInBars)`, if given, starts the clicks instead (score
  * auto-scroll) and returns the first beat's AudioContext time. `score`
- * ({ scoreId, startMeasure }) links the take to a score.
+ * ({ scoreId, startMeasure }) links the take to a score. `partOf` makes it
+ * an overdub part of that take (not listed on its own).
  * Rejects with the getUserMedia error if the mic can't be opened.
  */
-export async function startRecording({ countInBars = 0, startMetronome = null, score = null } = {}) {
+export async function startRecording({ countInBars = 0, startMetronome = null, score = null, partOf = null } = {}) {
   if (session) return session;
   const input = await acquireInput('recorder');
   const clicking = metronome.running;
@@ -77,6 +78,7 @@ export async function startRecording({ countInBars = 0, startMetronome = null, s
       lengthSamples: 0,
       status: 'recording',
       ...(score ?? {}),
+      ...(partOf ? { partOf } : {}),
     };
     await saveRecording(rec); // first, so a crash leaves a recoverable entry
 
@@ -97,6 +99,7 @@ export async function startRecording({ countInBars = 0, startMetronome = null, s
       cutAt: null, // direct: performance.now() time the take starts
       ownsMetronome: false,
       startTime: null,
+      firstAt: null, // performance.now() time of the take's first sample
       bars: [],
       stopping: null,
       onStopped: null,
@@ -106,8 +109,10 @@ export async function startRecording({ countInBars = 0, startMetronome = null, s
       s.unsubscribe = onInputData((data, rate) => {
         if (!s.samples) s.rec.sampleRate = rate; // the track's real rate
         // A mic with another rate (device switch): keep what we have.
-        if (rate !== s.rec.sampleRate) stopRecording();
-        else append(s, s.cutAt == null ? data : afterCut(s, data, rate));
+        if (rate !== s.rec.sampleRate) { stopRecording(); return; }
+        const kept = s.cutAt == null ? data : afterCut(s, data, rate);
+        if (kept.length && s.firstAt == null) s.firstAt = performance.now() - (kept.length / rate) * 1000;
+        append(s, kept);
       });
     } else {
       node.port.onmessage = (e) => onWorkletMessage(s, e.data);
@@ -152,6 +157,7 @@ function onWorkletMessage(s, msg) {
       s.rec.firstBeatSec = Math.max(0, s.firstBeatTime - startTime);
     }
     s.startTime = startTime;
+    s.firstAt = performance.now() - (getContext().currentTime - startTime) * 1000;
   } else if (msg.type === 'chunk') {
     let data = msg.data;
     if (s.skip) {
@@ -215,8 +221,9 @@ export function recordBar(time, measureIndex) {
 }
 
 /**
- * Stop and finalize. Resolves to { rec, error }; rec is null if nothing was
- * captured. error is set if storage failed (the take keeps what was saved).
+ * Stop and finalize. Resolves to { rec, error, firstAt }; rec is null if
+ * nothing was captured. error is set if storage failed (the take keeps what
+ * was saved). firstAt: performance.now() time of the first sample.
  */
 export function stopRecording() {
   const s = session;
@@ -244,7 +251,7 @@ export function stopRecording() {
 
     if (s.writtenSamples === 0) {
       await deleteRecording(s.rec.id).catch(() => {});
-      return { rec: null, error: s.error };
+      return { rec: null, error: s.error, firstAt: null };
     }
     const rec = { ...s.rec, lengthSamples: s.writtenSamples, status: 'done' };
     if (s.bars.length && s.startTime != null) {
@@ -257,7 +264,7 @@ export function stopRecording() {
     } catch (e) {
       s.error ??= e;
     }
-    return { rec, error: s.error };
+    return { rec, error: s.error, firstAt: s.firstAt };
   })();
   emit();
   return s.stopping;

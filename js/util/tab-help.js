@@ -96,7 +96,13 @@ const HELP = {
       <li>Tap the name to rename the take or link it to a score. With a linked score, the note button shows it scrolling along with the take.</li>
       <li>Loop and speed are remembered for each take.</li>
     </ul>
-    <h3>Editor</h3>
+    <h3>Overdub</h3>
+    <ul>
+      <li>Overdub plays the take (from A if there is a loop) and records the microphone, so you can add a part on top. Use headphones, or the take is recorded again through the mic. Tap Stop overdub, or play to the end.</li>
+      <li>Bluetooth headphones delay the sound, so the new part usually comes out a little late. Tap Align for the part and drag on the waveform to slide it (the orange wave is the part), or use ◀ 10 ms and 10 ms ▶; play to check.</li>
+      <li>Each part has its own volume; × deletes a part. Sharing sends the mix. Editing mixes the parts into one track first.</li>
+    </ul>
+        <h3>Editor</h3>
     <ul>
       <li>The scissors button opens the editor. Drag to select; zoom 1×, 4× or 16× to be precise, and All selects everything.</li>
       <li>Crop keeps only the selection. Gain makes the selection louder or quieter; Normalize brings the loudest point up to just below clipping.</li>

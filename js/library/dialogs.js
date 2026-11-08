@@ -1,6 +1,6 @@
 // Share and details dialogs for a recording (DESIGN.md §5.8, W6).
 
-import { loadPcm, durationSec } from '../storage/recordings.js';
+import { loadMix, durationSec } from '../storage/recordings.js';
 import { listScores } from '../scores/scores.js';
 import { encodeWav } from '../util/wav.js';
 import { encodeForSharing, pickFormat, shareFileName, shareOrDownload, download } from './export.js';
@@ -53,7 +53,7 @@ export async function openShareDialog(rec) {
     $('.share-now', d).hidden = true;
     try {
       progress(0, 'Preparing…');
-      let pcm = await loadPcm(rec.id);
+      let pcm = await loadMix(rec);
       let suffix = '';
       if (what === 'loop') {
         pcm = pcm.slice(Math.round(rec.loopA * rec.sampleRate), Math.round(rec.loopB * rec.sampleRate));

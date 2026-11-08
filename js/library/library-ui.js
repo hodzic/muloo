@@ -116,10 +116,11 @@ async function render() {
       : [fmtDate(r.createdAt), fmtDur(durationSec(r)), formatBytes(sizeBytes(r)), r.tempo ? `${r.tempo} BPM ${r.timeSig}` : '']
         .filter(Boolean).join(' · ');
     const loop = r.loopOn && r.loopB != null ? '<span class="tag loop-tag">A/B</span>' : '';
+    const parts = r.parts?.length ? `<span class="tag">${r.parts.length + 1} parts</span>` : '';
     return `
       <li class="rec${r.id === highlightId ? ' highlight' : ''}" data-id="${r.id}">
         <button class="rec-open" ${inProgress ? 'disabled' : ''}>
-          <div class="rec-name">${escapeHtml(r.name)}${r.recovered ? ' <span class="tag">recovered</span>' : ''} ${loop}</div>
+          <div class="rec-name">${escapeHtml(r.name)}${r.recovered ? ' <span class="tag">recovered</span>' : ''} ${loop} ${parts}</div>
           <div class="rec-meta">${escapeHtml(meta)}</div>
         </button>
         <button class="btn icon share" aria-label="Share" ${inProgress ? 'disabled' : ''}>

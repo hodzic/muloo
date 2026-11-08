@@ -30,7 +30,7 @@ export function computePeaks(pcm, columns, start = 0, end = pcm.length) {
  * Draw peaks plus an optional loop region and playhead.
  * Times are fractions of the visible span (0..1); null hides an element.
  */
-export function drawWaveform(canvas, peaks, { a = null, b = null, loopOn = false, playhead = null, colors, labels = ['A', 'B'] }) {
+export function drawWaveform(canvas, peaks, { a = null, b = null, loopOn = false, playhead = null, colors, labels = ['A', 'B'], overlay = null }) {
   const g = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height, mid = H / 2;
   const dpr = W / canvas.clientWidth || 1;
@@ -43,6 +43,17 @@ export function drawWaveform(canvas, peaks, { a = null, b = null, loopOn = false
     const y0 = mid - peaks.max[c] * mid * 0.95;
     const y1 = mid - peaks.min[c] * mid * 0.95;
     g.fillRect(c * colW, y0, Math.max(1, colW), Math.max(1, y1 - y0));
+  }
+
+  // An overdub part being lined up: its peaks over [x, x + w] in its own colour.
+  if (overlay) {
+    g.fillStyle = overlay.color;
+    const m = overlay.peaks.min.length, ow = (overlay.w * W) / m;
+    for (let c = 0; c < m; c++) {
+      const y0 = mid - overlay.peaks.max[c] * mid * 0.95;
+      const y1 = mid - overlay.peaks.min[c] * mid * 0.95;
+      g.fillRect(overlay.x * W + c * ow, y0, Math.max(1, ow), Math.max(1, y1 - y0));
+    }
   }
 
   // Loop region on top so it stays visible over loud passages.

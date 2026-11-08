@@ -62,3 +62,36 @@ export function crop(pcm, start, end, sampleRate, fadeMs = 10) {
   if (end < pcm.length) fadeOut(out, n);
   return out;
 }
+
+/**
+ * Mix overdub parts onto a take, at `rate`. base: Int16Array; parts: [{ pcm,
+ * rate, offset (seconds; where the part starts in the take, may be < 0),
+ * gain }]. Parts recorded at another rate are resampled (linear). The result
+ * runs to the end of whichever is longest; samples before 0 are dropped.
+ */
+export function mixLayers(base, rate, baseGain, parts) {
+  const placed = parts.map((p) => {
+    const data = p.rate === rate ? p.pcm : resample(p.pcm, p.rate, rate);
+    return { data, start: Math.round(p.offset * rate), gain: p.gain };
+  });
+  const len = Math.max(base.length, ...placed.map((p) => p.start + p.data.length));
+  const acc = new Float32Array(len);
+  if (baseGain) for (let i = 0; i < base.length; i++) acc[i] = base[i] * baseGain;
+  for (const { data, start, gain } of placed) {
+    if (!gain) continue;
+    for (let j = Math.max(0, -start); j < data.length; j++) acc[start + j] += data[j] * gain;
+  }
+  const out = new Int16Array(len);
+  for (let i = 0; i < len; i++) out[i] = Math.max(-32768, Math.min(32767, Math.round(acc[i])));
+  return out;
+}
+
+function resample(pcm, from, to) {
+  const n = Math.round((pcm.length * to) / from);
+  const out = new Int16Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i * from) / to, k = Math.floor(x), f = x - k;
+    out[i] = Math.round((pcm[k] ?? 0) * (1 - f) + (pcm[k + 1] ?? pcm[k] ?? 0) * f);
+  }
+  return out;
+}

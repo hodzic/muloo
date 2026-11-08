@@ -133,15 +133,18 @@ export function runDspChecks() {
   // Edit operations.
   const src = floatToInt16(tone(440, { n: 48000, amp: 0.25 }));
   {
-    // Overdub mix: a part placed 0.5 s in, one before the start, one at half the rate.
+    // Overdub mix: a part placed 0.8 s in, one before the start, one at half the rate.
     const base = new Int16Array(1000).fill(1000);
     const part = new Int16Array(400).fill(2000);
-    const m = mixLayers(base, 1000, 1, [{ pcm: part, rate: 1000, offset: 0.8, gain: 0.5 }, { pcm: part, rate: 1000, offset: -0.3, gain: 1 }, { pcm: new Int16Array(10).fill(20000), rate: 500, offset: 0.1, gain: 2 }]);
+    const m = mixLayers(base, 1000, 1, [{ pcm: part, rate: 1000, offset: 0.8, gain: 0.5 }, { pcm: part, rate: 1000, offset: -0.3, gain: 1 }, { pcm: new Int16Array(10).fill(5000), rate: 500, offset: 0.1, gain: 2 }]);
+    // Too loud together: the whole mix comes down so the peak just fits.
+    const loud = mixLayers(new Int16Array(10).fill(30000), 1000, 1, [{ pcm: new Int16Array(10).fill(30000), rate: 1000, offset: 0, gain: 1 }]);
     results.push({
-      name: 'Overdub mix places, scales, resamples and clips parts',
-      pass: m.length === 1200 && m[0] === 3000 && m[99] === 3000 && m[100] === 32767 && m[119] === 32767 && m[120] === 1000
-        && m[799] === 1000 && m[800] === 2000 && m[999] === 2000 && m[1000] === 1000 && m[1199] === 1000,
-      detail: `length ${m.length}, samples ${[0, 100, 120, 800, 1000, 1199].map((i) => m[i]).join(' ')}`,
+      name: 'Overdub mix places, scales and resamples parts, and turns down instead of clipping',
+      pass: m.length === 1200 && m[0] === 3000 && m[99] === 3000 && m[100] === 11000 && m[119] === 11000 && m[120] === 1000
+        && m[799] === 1000 && m[800] === 2000 && m[999] === 2000 && m[1000] === 1000 && m[1199] === 1000
+        && loud.every((v) => v === 32767),
+      detail: `length ${m.length}, samples ${[0, 100, 120, 800, 1000, 1199].map((i) => m[i]).join(' ')}, loud ${loud[0]}`,
     });
   }
   const cut = crop(src, 12000, 36000, SR, 10);

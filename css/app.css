@@ -589,5 +589,22 @@ body.practice-full .practice { gap: 6px; }
 .tap-hint { position: absolute; bottom: 10px; left: 0; right: 0; text-align: center; font-size: 14px; color: var(--muted); }
 .listening .tap-hint { display: none; }
 .tuner:not(.listening) .level { visibility: hidden; }
-/* With overdub parts the controls need the room: a shorter waveform keeps play on screen. */
-.player:has(.p-layer) .wave-wrap, .player.overdubbing .wave-wrap { flex: none; height: 150px; min-height: 0; }
+/* With overdub parts everything has to fit above the tab bar: a shorter
+   waveform, loop and speed on one row, smaller transport. */
+.p-ls { display: flex; flex-direction: column; gap: 12px; }
+.p-od-row { display: flex; gap: 8px; }
+.p-od-row .p-overdub { flex: 1; }
+.p-countin { flex: none; width: auto; }
+.p-align-text { flex: none !important; }
+.p-align-hint { flex: 1 1 auto; font-size: 12px; text-align: right; }
+.player.has-parts, .player.overdubbing { gap: 8px; }
+.player.has-parts .wave-wrap, .player.overdubbing .wave-wrap { flex: none; height: 130px; min-height: 0; }
+.player.has-parts .p-ls { flex-direction: row; align-items: center; gap: 8px; }
+.player.has-parts .loop-row { flex: 1; min-width: 0; }
+.player.has-parts .speed-row { gap: 6px; }
+.player.has-parts .speed-row > .muted { display: none; }
+.player.has-parts .speed-row .btn.round { width: 40px; height: 40px; }
+.player.has-parts .speed-value { font-size: 18px; min-width: 44px; text-align: center; }
+.player.has-parts .transport { gap: 20px; }
+.player.has-parts .transport .btn.round { width: 48px; height: 48px; }
+.player.has-parts .transport .play { width: 64px !important; height: 64px !important; }

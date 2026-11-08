@@ -67,7 +67,8 @@ export function crop(pcm, start, end, sampleRate, fadeMs = 10) {
  * Mix overdub parts onto a take, at `rate`. base: Int16Array; parts: [{ pcm,
  * rate, offset (seconds; where the part starts in the take, may be < 0),
  * gain }]. Parts recorded at another rate are resampled (linear). The result
- * runs to the end of whichever is longest; samples before 0 are dropped.
+ * runs to the end of whichever is longest; samples before 0 are dropped. If
+ * the sum goes past full scale, the whole mix is scaled down to fit.
  */
 export function mixLayers(base, rate, baseGain, parts) {
   const placed = parts.map((p) => {
@@ -81,8 +82,13 @@ export function mixLayers(base, rate, baseGain, parts) {
     if (!gain) continue;
     for (let j = Math.max(0, -start); j < data.length; j++) acc[start + j] += data[j] * gain;
   }
+  // Loud parts added together go past full scale: turn the whole mix down
+  // rather than clip it.
+  let top = 0;
+  for (let i = 0; i < len; i++) top = Math.max(top, Math.abs(acc[i]));
+  const k = top > 32767 ? 32767 / top : 1;
   const out = new Int16Array(len);
-  for (let i = 0; i < len; i++) out[i] = Math.max(-32768, Math.min(32767, Math.round(acc[i])));
+  for (let i = 0; i < len; i++) out[i] = Math.max(-32768, Math.min(32767, Math.round(acc[i] * k)));
   return out;
 }
 

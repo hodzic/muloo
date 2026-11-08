@@ -12,6 +12,9 @@ import { getContext, holdAudio, releaseAudio } from '../audio/context.js';
 import { readLevel } from '../audio/input.js';
 import { loadPcm, getRecording, saveRecording, loadParts, mixFrom, mergeParts, deleteRecording } from '../storage/recordings.js';
 import { startRecording, stopRecording, isRecording } from '../recorder/recorder.js';
+import { metronome } from '../metronome/scheduler.js';
+import { settings } from '../storage/db.js';
+import { int16ToFloat } from '../util/wav.js';
 import { encodeWav } from '../util/wav.js';
 import { computePeaks, drawWaveform } from '../editor/waveform.js';
 import { holdWakeLock, releaseWakeLock } from '../util/wakelock.js';
@@ -31,7 +34,7 @@ const MIN_LOOP = 0.05;
 const HANDLE_HIT_PX = 24;
 const DRAG_PX = 8;
 const NUDGE_SEC = 0.01;
-const SYNC_SAMPLES = 120;
+const ZOOM_SEC = 3; // waveform span while lining up a part
 
 let audio = null;
 let gain = null;
@@ -42,8 +45,8 @@ let rec = null;
 let pcm = null; // what plays: the take with its parts mixed in
 let base = null; // the take's own audio
 let partAudio = new Map(); // part id → { pcm, rate }
-let overdub = null; // while recording a part: { recId, prevRate, prevLoopOn, syncs, stopping }
-let align = null; // while lining up a part: { id, restPeaks, partPeaks }
+let overdub = null; // while recording a part: { recId, prevLoopOn, from, when, src, prevMetro, stopping }
+let align = null; // while lining up a part: { id, rest, t0, t1, key, restPeaks, partPeaks }
 let remixTimer = null;
 let url = null;
 let duration = 0;
@@ -291,6 +294,7 @@ function markup() {
       <div class="wave-wrap"><canvas class="wave" aria-label="Waveform. Tap to seek, drag to set the loop."></canvas></div>
       <div class="out-level" aria-hidden="true"><div class="out-fill"></div></div>
       <div class="times"><span class="pos">0:00.0</span><span class="loop-times"></span><span class="dur"></span></div>
+      <div class="p-ls">
       <div class="loop-row">
         <button class="btn loop-toggle" aria-pressed="false">Loop</button>
         <button class="btn icon clear-loop" aria-label="Clear loop">${svg('M6 6l12 12M18 6L6 18')}</button>
@@ -301,15 +305,22 @@ function markup() {
         <span class="speed-value"></span>
         <button class="btn round speed-up" aria-label="Faster">+</button>
       </div>
+      </div>
       <div class="p-parts">
         <div class="p-layers"></div>
         <div class="p-align" hidden>
           <span class="p-align-text"></span>
+          <span class="p-align-hint muted">Zoomed to ${ZOOM_SEC} s · drag to move the part</span>
           <button class="btn p-nudge" data-d="-1" aria-label="10 ms earlier">◀ 10 ms</button>
           <button class="btn p-nudge" data-d="1" aria-label="10 ms later">10 ms ▶</button>
           <button class="btn p-align-done">Done</button>
         </div>
-        <button class="btn wide p-overdub"><span class="rec-dot"></span> <span class="p-overdub-label">Overdub</span></button>
+        <div class="p-od-row">
+          <button class="btn p-overdub"><span class="rec-dot"></span> <span class="p-overdub-label">Overdub</span></button>
+          <select class="p-countin" aria-label="Count-in">
+            <option value="0">No count-in</option><option value="1">1 bar count-in</option><option value="2">2 bars count-in</option>
+          </select>
+        </div>
       </div>
       <div class="transport">
         <button class="btn round to-a" aria-label="Return to A">${svg('M6 5v14M18 5l-9 7 9 7z')}</button>
@@ -341,6 +352,9 @@ function bind() {
     cb?.(id);
   });
   $('.p-overdub', root).addEventListener('click', () => (overdub ? stopOverdub() : startOverdub()));
+  // Shared with recording on the Practice tab.
+  $('.p-countin', root).value = String(settings.get('recorder.countIn', 1));
+  $('.p-countin', root).addEventListener('change', (e) => settings.set('recorder.countIn', +e.target.value));
   $('.p-layers', root).addEventListener('input', (e) => {
     const r = e.target.closest('[data-layer]');
     if (!r || !rec) return;
@@ -430,9 +444,9 @@ function flushSave() {
   clearTimeout(saveTimer);
   saveTimer = null;
   if (!rec) return;
-  // While overdubbing the loop is off and speed 100% only for the take.
+  // While overdubbing the loop is off only for the take.
   const loopOn = overdub ? overdub.prevLoopOn : loop.on;
-  const speed = overdub ? overdub.prevRate : audio.playbackRate;
+  const speed = audio.playbackRate;
   rec = { ...rec, loopA: loop.a, loopB: loop.b, loopOn, speed };
   saveRecording(rec).catch((e) => console.warn('Could not save player state', e));
 }
@@ -455,6 +469,9 @@ function renderControls() {
 function renderParts() {
   const busy = !!overdub;
   $('.player', root).classList.toggle('overdubbing', busy);
+  $('.player', root).classList.toggle('has-parts', !!rec.parts?.length);
+  $('.player', root).classList.toggle('aligning', !!align);
+  $('.p-countin', root).disabled = busy;
   for (const sel of ['.speed-down', '.speed-up', '.loop-toggle', '.clear-loop', '.p-edit', '.p-share', '.p-details', '.to-a', '.back5']) {
     if (busy) $(sel, root).disabled = true;
     else if (!['.speed-down', '.speed-up', '.loop-toggle'].includes(sel)) $(sel, root).disabled = false;
@@ -487,6 +504,9 @@ function renderParts() {
 }
 
 // Overdub: play the take and record the mic; the new part becomes rec.parts[n].
+// While overdubbing the take plays from an AudioBufferSourceNode, so it can
+// start exactly on the beat after the count-in, on the same clock as the
+// clicks, and its position is known exactly.
 
 async function startOverdub() {
   if (!rec || overdub) return;
@@ -495,60 +515,90 @@ async function startOverdub() {
   audio.pause();
   // From the loop start if there is a loop, else from here (or the start, at the end).
   const from = loop.a ?? (audio.currentTime >= duration - 0.05 ? 0 : audio.currentTime);
-  overdub = { recId: rec.id, prevRate: audio.playbackRate, prevLoopOn: loop.on, syncs: [], stopping: false };
-  // In time with the take: no loop jumps, normal speed.
-  loop.on = false;
-  audio.playbackRate = 1;
+  const countInBars = +settings.get('recorder.countIn', 1) || 0;
+  overdub = { recId: rec.id, prevLoopOn: loop.on, from, when: null, src: null, prevMetro: null, stopping: false };
+  loop.on = false; // no loop jumps while recording
   renderControls();
+  const ctx = getContext();
+  await holdAudio('overdub');
+  // Count in at the take's own tempo when it has one.
+  if (countInBars && rec.tempo && !metronome.running) {
+    overdub.prevMetro = { bpm: metronome.bpm, timeSig: metronome.timeSig };
+    metronome.set({ bpm: rec.tempo, ...(rec.timeSig ? { timeSig: rec.timeSig } : {}) });
+  }
+  let s;
   try {
-    await startRecording({ partOf: rec.id });
+    s = await startRecording({ partOf: rec.id, countInBars });
   } catch (e) {
     endOverdub();
     toast(`Can't open the microphone: ${e.message}`);
     return;
   }
-  await holdAudio('player');
-  audio.currentTime = from;
-  try {
-    await audio.play();
-  } catch (e) {
-    toast(`Could not play: ${e.message}`);
-    stopOverdub();
-  }
+  if (!overdub) return;
+  // The take's first beat lands on the first beat after the count-in (a take
+  // recorded with a count-in starts a little before its first beat).
+  const lead = from === 0 && loop.a == null ? rec.firstBeatSec ?? 0 : 0;
+  const when = s.firstBeatTime != null ? Math.max(ctx.currentTime + 0.02, s.firstBeatTime - lead) : ctx.currentTime + 0.1;
+  const buf = ctx.createBuffer(1, pcm.length, rec.sampleRate);
+  buf.copyToChannel(int16ToFloat(pcm), 0);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  gain.gain.cancelScheduledValues(0);
+  gain.gain.value = 1;
+  src.connect(gain);
+  src.onended = () => { if (overdub?.src === src) stopOverdub(); };
+  src.start(when, from);
+  Object.assign(overdub, { when, src });
 }
 
-/** Put the loop and speed back after an overdub. */
+/** The take's position as heard, while overdubbing. */
+function overdubTime() {
+  const ctx = getContext();
+  const t = ctx.currentTime - (ctx.outputLatency || 0) - overdub.when;
+  return Math.min(duration, overdub.from + Math.max(0, t));
+}
+
+/** Put the loop, the metronome and audio back after an overdub. */
 function endOverdub() {
   const od = overdub;
   overdub = null;
-  if (!od || !audio) return;
-  audio.playbackRate = od.prevRate;
+  if (!od) return;
+  try { od.src?.stop(); } catch { /* not started */ }
+  od.src?.disconnect();
+  if (od.prevMetro) metronome.set(od.prevMetro);
+  releaseAudio('overdub');
   loop.on = od.prevLoopOn;
-  if (root) renderControls();
+  if (root && audio) {
+    audio.currentTime = od.from;
+    renderControls();
+  }
 }
 
 async function stopOverdub() {
   const od = overdub;
   if (!od || od.stopping) return;
   od.stopping = true;
-  audio.pause();
+  // performance.now() ↔ the audio clock as heard, for placing the part.
+  const ctx = getContext();
+  const ts = ctx.getOutputTimestamp?.();
+  const clock = ts?.performanceTime
+    ? { ctx: ts.contextTime, perf: ts.performanceTime }
+    : { ctx: ctx.currentTime - (ctx.outputLatency || 0), perf: performance.now() };
+  try { od.src?.stop(); } catch { /* not started */ }
   if (root) renderControls();
   const { rec: part, firstAt, error } = await stopRecording();
   endOverdub();
   if (error) toast(`Recording problem: ${error.message}`);
   if (!part) return;
-  if (firstAt == null || !od.syncs.length) {
+  if (firstAt == null || od.when == null) {
     await deleteRecording(part.id).catch(() => {});
     toast('Nothing was recorded.');
     return;
   }
-  // Where the part's first sample falls in the take: the take's position
-  // against performance.now() while playing (median of the frames), less
-  // the output latency the browser reports. Lined up by hand from there.
-  const syncs = [...od.syncs].sort((a, b) => a - b);
-  const ctx = getContext();
-  const lat = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
-  const offset = Math.round((syncs[syncs.length >> 1] + firstAt / 1000 - lat) * 1000) / 1000;
+  // The part's first sample goes where the take was (as heard) at that
+  // moment. Mic and Bluetooth delays aren't known: line up by hand from here.
+  const heard = clock.ctx + (firstAt - clock.perf) / 1000;
+  const offset = Math.round((od.from + heard - od.when) * 1000) / 1000;
   const entry = { id: part.id, offset, gain: 1 };
   if (rec?.id === od.recId) {
     rec.parts = [...(rec.parts ?? []), entry];
@@ -566,26 +616,52 @@ async function stopOverdub() {
   }
 }
 
-// Lining up a part: drag on the waveform moves it; the rest of the mix is
-// drawn as usual and the part on top.
+// Lining up a part: the waveform zooms to ZOOM_SEC around the playhead and
+// shows the rest of the mix grey and the part orange; drag to move the part.
 
 function startAlign(id) {
   if (!rec) return;
-  align = id ? { id } : null;
-  if (align) prepareAlign();
+  if (!id) align = null;
+  else {
+    const p = rec.parts?.find((q) => q.id === id);
+    const t = audio.currentTime;
+    // Around where the part starts if the playhead isn't in it.
+    const c = p && (t < p.offset || t > p.offset + (partAudio.get(id)?.pcm.length ?? 0) / (partAudio.get(id)?.rate || 1)) ? Math.max(0, p.offset) + ZOOM_SEC / 3 : t;
+    align = { id, rest: null };
+    setZoom(c - ZOOM_SEC / 3);
+  }
+  prepareAlign();
   renderControls();
 }
 
+function setZoom(t0) {
+  const t = Math.max(0, Math.min(Math.max(0, duration - ZOOM_SEC), t0));
+  align.t0 = t;
+  align.t1 = Math.min(duration, t + ZOOM_SEC) || ZOOM_SEC;
+  align.key = null;
+}
+
+/** The mix without the part being lined up (after a remix or another part changed). */
 function prepareAlign() {
   if (!align || !root) return;
-  const p = rec.parts?.find((q) => q.id === align.id), a = partAudio.get(align.id);
-  if (!p || !a) { align = null; return; }
-  const c = $('.wave', root), cols = Math.max(1, Math.round(c.clientWidth));
-  const rest = mixFrom({ ...rec, parts: rec.parts.filter((q) => q.id !== p.id) }, base, partAudio);
-  align.restPeaks = computePeaks(rest, cols, 0, pcm.length);
-  const partDur = a.pcm.length / a.rate;
-  align.partDur = partDur;
-  align.partPeaks = computePeaks(a.pcm, Math.max(1, Math.round((cols * partDur) / duration)));
+  const p = rec.parts?.find((q) => q.id === align.id);
+  if (!p || !partAudio.get(align.id)) { align = null; return; }
+  align.rest = mixFrom({ ...rec, parts: rec.parts.filter((q) => q.id !== p.id) }, base, partAudio);
+  align.key = null;
+}
+
+/** Peaks of the rest and of the part over the zoomed span, cached until either moves. */
+function alignPeaks() {
+  const p = rec.parts.find((q) => q.id === align.id), a = partAudio.get(align.id);
+  const cols = Math.max(1, Math.round($('.wave', root).clientWidth));
+  const key = `${align.t0}|${align.t1}|${p.offset}|${cols}`;
+  if (align.key !== key) {
+    const r = rec.sampleRate;
+    align.restPeaks = computePeaks(align.rest, cols, Math.round(align.t0 * r), Math.round(align.t1 * r));
+    align.partPeaks = computePeaks(a.pcm, cols, Math.round((align.t0 - p.offset) * a.rate), Math.round((align.t1 - p.offset) * a.rate));
+    align.key = key;
+  }
+  return align;
 }
 
 /** Move part `id` by `d` seconds; `now` remixes straight away. */
@@ -593,7 +669,7 @@ function movePart(id, d, now = false) {
   rec.parts = rec.parts.map((p) => (p.id === id ? { ...p, offset: Math.round((p.offset + d) * 1000) / 1000 } : p));
   renderParts();
   changed();
-  if (now) { remix(); } else remixSoon();
+  if (now) remix(); else remixSoon();
 }
 
 function onPlayState() {
@@ -619,11 +695,16 @@ function onKey(e) {
 
 // Waveform: tap seeks, drag on empty space draws a loop, drag a handle moves it.
 
+// The waveform's span: the whole take, or the zoomed span while lining up.
+const span = () => (align ? [align.t0, align.t1] : [0, duration]);
 const xToTime = (x) => {
-  const c = $('.wave', root);
-  return Math.max(0, Math.min(duration, (x / c.clientWidth) * duration));
+  const c = $('.wave', root), [t0, t1] = span();
+  return Math.max(0, Math.min(duration, t0 + (x / c.clientWidth) * (t1 - t0)));
 };
-const timeToX = (t) => (t / duration) * $('.wave', root).clientWidth;
+const timeToX = (t) => {
+  const [t0, t1] = span();
+  return ((t - t0) / (t1 - t0)) * $('.wave', root).clientWidth;
+};
 
 function onPointerDown(e) {
   if (overdub) return;
@@ -641,7 +722,8 @@ function onPointerMove(e) {
   if (drag.mode === 'shift') {
     if (!drag.moved && Math.abs(e.offsetX - drag.x0) <= DRAG_PX) return;
     drag.moved = true;
-    const d = ((e.offsetX - drag.last) / $('.wave', root).clientWidth) * duration;
+    const [t0, t1] = span();
+    const d = ((e.offsetX - drag.last) / $('.wave', root).clientWidth) * (t1 - t0);
     drag.last = e.offsetX;
     const id = align.id;
     rec.parts = rec.parts.map((p) => (p.id === id ? { ...p, offset: p.offset + d } : p));
@@ -693,7 +775,7 @@ function resizeCanvas() {
 function frame() {
   if (!root) return;
   raf = requestAnimationFrame(frame);
-  const t = audio.currentTime;
+  const t = overdub?.when != null ? overdubTime() : audio.currentTime;
 
   // Loop: fade out just before B, jump to A, fade back in.
   if (loopActive() && !audio.paused && !seamPending) {
@@ -716,26 +798,28 @@ function frame() {
     }
   }
 
-  // Overdub: the take's position against performance.now(), to place the part.
-  if (overdub && !overdub.stopping && !audio.paused) {
-    overdub.syncs.push(t - performance.now() / 1000);
-    if (overdub.syncs.length > SYNC_SAMPLES) overdub.syncs.shift();
-  }
-
   $('.pos', root).textContent = fmt(t);
   if (follow) follow.view.setPosition(trackPosition(t));
-  if (peaks && duration > 0) {
-    const p = align?.partPeaks && rec.parts?.find((q) => q.id === align.id);
-    drawWaveform($('.wave', root), p ? align.restPeaks : peaks, {
-      a: !p && loop.a != null ? loop.a / duration : null,
-      b: !p && loop.b != null ? loop.b / duration : null,
+  if (align?.rest) {
+    // Zoomed: page along with the playhead.
+    if (!drag && (t > align.t1 || t < align.t0)) setZoom(t - ZOOM_SEC / 6);
+    const z = alignPeaks(), w = z.t1 - z.t0;
+    drawWaveform($('.wave', root), z.restPeaks, {
+      playhead: t >= z.t0 && t <= z.t1 ? (t - z.t0) / w : null,
+      colors,
+      overlay: { peaks: z.partPeaks, x: 0, w: 1, color: colors.part },
+    });
+  } else if (peaks && duration > 0) {
+    drawWaveform($('.wave', root), peaks, {
+      a: loop.a != null ? loop.a / duration : null,
+      b: loop.b != null ? loop.b / duration : null,
       loopOn: loopActive(),
       playhead: t / duration,
       colors,
-      overlay: p ? { peaks: align.partPeaks, x: p.offset / duration, w: align.partDur / duration, color: colors.part } : null,
     });
   }
   if (!levelBuf) levelBuf = new Float32Array(analyser.fftSize);
   const { peakDb } = readLevel(analyser, levelBuf);
-  $('.out-fill', root).style.width = `${audio.paused ? 0 : Math.max(0, Math.min(100, (peakDb + 60) * (100 / 60)))}%`;
+  const sounding = !audio.paused || overdub?.when != null;
+  $('.out-fill', root).style.width = `${sounding ? Math.max(0, Math.min(100, (peakDb + 60) * (100 / 60))) : 0}%`;
 }

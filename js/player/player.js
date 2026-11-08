@@ -10,7 +10,7 @@
 
 import { getContext, holdAudio, releaseAudio } from '../audio/context.js';
 import { readLevel } from '../audio/input.js';
-import { loadPcm, getRecording, saveRecording, loadParts, mixFrom, mergeParts, deleteRecording } from '../storage/recordings.js';
+import { loadPcm, getRecording, saveRecording, loadParts, mixFrom, mergeParts, deleteRecording, replacePcm } from '../storage/recordings.js';
 import { startRecording, stopRecording, isRecording } from '../recorder/recorder.js';
 import { metronome } from '../metronome/scheduler.js';
 import { settings } from '../storage/db.js';
@@ -45,7 +45,7 @@ let rec = null;
 let pcm = null; // what plays: the take with its parts mixed in
 let base = null; // the take's own audio
 let partAudio = new Map(); // part id → { pcm, rate }
-let overdub = null; // while recording a part: { recId, prevLoopOn, from, when, src, prevMetro, stopping }
+let overdub = null; // while recording a part: { recId, prevLoopOn, from, when, src, prevMetro, stopping, loop: [a, b] | null }
 let align = null; // while lining up a part: { id, rest, t0, t1, key, restPeaks, partPeaks }
 let remixTimer = null;
 let url = null;
@@ -479,7 +479,7 @@ function renderParts() {
   const ob = $('.p-overdub', root);
   ob.classList.toggle('recording', busy);
   ob.disabled = !!overdub?.stopping;
-  $('.p-overdub-label', root).textContent = busy ? 'Stop overdub' : 'Overdub';
+  $('.p-overdub-label', root).textContent = busy ? 'Stop overdub' : loopActive() ? 'Overdub over loop' : 'Overdub';
   const parts = rec.parts ?? [];
   const layers = $('.p-layers', root);
   const key = parts.map((p) => p.id).join() + (align?.id ?? '') + busy;
@@ -513,11 +513,12 @@ async function startOverdub() {
   if (isRecording()) { toast('Already recording.'); return; }
   startAlign(null);
   audio.pause();
-  // From the loop start if there is a loop, else from here (or the start, at the end).
+  // With the loop on, the loop repeats for as long as you play (a new, longer
+  // take comes out of it); otherwise the take plays once, from A or from here.
+  const looping = loopActive() ? [loop.a, loop.b] : null;
   const from = loop.a ?? (audio.currentTime >= duration - 0.05 ? 0 : audio.currentTime);
   const countInBars = +settings.get('recorder.countIn', 1) || 0;
-  overdub = { recId: rec.id, prevLoopOn: loop.on, from, when: null, src: null, prevMetro: null, stopping: false };
-  loop.on = false; // no loop jumps while recording
+  overdub = { recId: rec.id, prevLoopOn: loop.on, from, when: null, src: null, prevMetro: null, stopping: false, loop: looping };
   renderControls();
   const ctx = getContext();
   await holdAudio('overdub');
@@ -543,6 +544,7 @@ async function startOverdub() {
   buf.copyToChannel(int16ToFloat(pcm), 0);
   const src = ctx.createBufferSource();
   src.buffer = buf;
+  if (looping) Object.assign(src, { loop: true, loopStart: looping[0], loopEnd: looping[1] });
   gain.gain.cancelScheduledValues(0);
   gain.gain.value = 1;
   src.connect(gain);
@@ -554,8 +556,12 @@ async function startOverdub() {
 /** The take's position as heard, while overdubbing. */
 function overdubTime() {
   const ctx = getContext();
-  const t = ctx.currentTime - (ctx.outputLatency || 0) - overdub.when;
-  return Math.min(duration, overdub.from + Math.max(0, t));
+  const t = Math.max(0, ctx.currentTime - (ctx.outputLatency || 0) - overdub.when);
+  if (overdub.loop) {
+    const [a, b] = overdub.loop;
+    return a + (t % (b - a));
+  }
+  return Math.min(duration, overdub.from + t);
 }
 
 /** Put the loop, the metronome and audio back after an overdub. */
@@ -598,6 +604,17 @@ async function stopOverdub() {
   // The part's first sample goes where the take was (as heard) at that
   // moment. Mic and Bluetooth delays aren't known: line up by hand from here.
   const heard = clock.ctx + (firstAt - clock.perf) / 1000;
+  if (od.loop) {
+    // Seconds into the first pass of the loop, which starts the new take.
+    const taken = await loopTake(od.recId, part, heard - od.when, od.loop);
+    if (!taken) return;
+    toast(`New take: the loop ×${taken.passes} with your part. The original take is unchanged.`);
+    if (root) {
+      await openPlayer(root, taken.rec.id, { onClose: onCloseCb, onEdit: onEditCb });
+      startAlign(part.id);
+    }
+    return;
+  }
   const offset = Math.round((od.from + heard - od.when) * 1000) / 1000;
   const entry = { id: part.id, offset, gain: 1 };
   if (rec?.id === od.recId) {
@@ -614,6 +631,54 @@ async function stopOverdub() {
     if (take) await saveRecording({ ...take, parts: [...(take.parts ?? []), entry] });
     else await deleteRecording(part.id).catch(() => {});
   }
+}
+
+/**
+ * After overdubbing over loop [a, b] of take `takeId`: a new take with the
+ * loop repeated as many times as the new part needs, each existing part
+ * repeated as its own track, and the new part (starting `start` seconds into
+ * the first pass) on top. Resolves to { rec, passes }, or null.
+ */
+async function loopTake(takeId, part, start, [a, b]) {
+  const take = await getRecording(takeId);
+  if (!take) { await deleteRecording(part.id).catch(() => {}); return null; }
+  const len = b - a;
+  const passes = Math.max(1, Math.ceil((Math.max(0, start) + part.lengthSamples / part.sampleRate - 0.05) / len));
+  // [a, b] of a layer starting at `offset`, repeated `passes` times.
+  const repeat = (pcm, rate, offset) => {
+    const n = Math.round(len * rate), out = new Int16Array(n * passes);
+    const s0 = Math.round((a - offset) * rate);
+    for (let i = 0; i < n; i++) {
+      const v = pcm[s0 + i];
+      if (v) for (let k = 0; k < passes; k++) out[k * n + i] = v;
+    }
+    return out;
+  };
+  const id = crypto.randomUUID();
+  const parts = [];
+  const audio = await loadParts(take);
+  for (const p of take.parts ?? []) {
+    const x = audio.get(p.id);
+    if (!x) continue;
+    const r = { id: crypto.randomUUID(), name: 'part', createdAt: Date.now(), sampleRate: x.rate, lengthSamples: 0, status: 'done', partOf: id };
+    await replacePcm(r, repeat(x.pcm, x.rate, p.offset));
+    parts.push({ id: r.id, offset: 0, gain: p.gain });
+  }
+  await saveRecording({ ...part, partOf: id });
+  parts.push({ id: part.id, offset: Math.round(start * 1000) / 1000, gain: 1 });
+  const { loopA, loopB, loopOn, scoreTrack, firstBeatSec, ...keep } = take;
+  const rec = await replacePcm({
+    ...keep,
+    id,
+    name: `${take.name} loop ×${passes}`.slice(0, 120),
+    createdAt: Date.now(),
+    parts,
+    // One pass looped, as a starting point.
+    loopA: 0,
+    loopB: len,
+    loopOn: false,
+  }, repeat(await loadPcm(take.id), take.sampleRate, 0));
+  return { rec, passes };
 }
 
 // Lining up a part: the waveform zooms to ZOOM_SEC around the playhead and

@@ -48,6 +48,7 @@ let partAudio = new Map(); // part id → { pcm, rate }
 let overdub = null; // while recording a part: { recId, prevLoopOn, from, when, src, prevMetro, stopping, loop: [a, b] | null }
 let align = null; // while lining up a part: { id, rest, t0, t1, key, restPeaks, partPeaks }
 let remixTimer = null;
+let offCountIn = null;
 let url = null;
 let duration = 0;
 let peaks = null;
@@ -190,6 +191,8 @@ export function closePlayer() {
   releaseWakeLock('player');
   releaseAudio('player');
   if (root) root.innerHTML = '';
+  offCountIn?.();
+  offCountIn = null;
   rec = pcm = base = url = peaks = root = align = null;
   partAudio = new Map();
   drag = null;
@@ -291,7 +294,7 @@ function markup() {
         <button class="btn icon p-share" aria-label="Share">${svg('M12 3v12M7 8l5-5 5 5M5 13v7h14v-7')}</button>
       </div>
       <div class="p-score-view" hidden></div>
-      <div class="wave-wrap"><canvas class="wave" aria-label="Waveform. Tap to seek, drag to set the loop."></canvas></div>
+      <div class="wave-wrap"><canvas class="wave" aria-label="Waveform. Tap to seek, drag to set the loop."></canvas><div class="p-countin-show" hidden></div></div>
       <div class="out-level" aria-hidden="true"><div class="out-fill"></div></div>
       <div class="times"><span class="pos">0:00.0</span><span class="loop-times"></span><span class="dur"></span></div>
       <div class="p-ls">
@@ -352,6 +355,14 @@ function bind() {
     cb?.(id);
   });
   $('.p-overdub', root).addEventListener('click', () => (overdub ? stopOverdub() : startOverdub()));
+  // The count-in, big over the waveform.
+  offCountIn?.();
+  offCountIn = metronome.onBeat((ev) => {
+    if (!root || ev.sub) return;
+    const el = $('.p-countin-show', root);
+    el.hidden = !(overdub && ev.countIn);
+    if (!el.hidden) el.textContent = ev.beat + 1;
+  });
   // Shared with recording on the Practice tab.
   $('.p-countin', root).value = String(settings.get('recorder.countIn', 1));
   $('.p-countin', root).addEventListener('change', (e) => settings.set('recorder.countIn', +e.target.value));
@@ -522,10 +533,15 @@ async function startOverdub() {
   renderControls();
   const ctx = getContext();
   await holdAudio('overdub');
-  // Count in at the take's own tempo when it has one.
-  if (countInBars && rec.tempo && !metronome.running) {
-    overdub.prevMetro = { bpm: metronome.bpm, timeSig: metronome.timeSig };
-    metronome.set({ bpm: rec.tempo, ...(rec.timeSig ? { timeSig: rec.timeSig } : {}) });
+  // Count in at the take's own tempo when it has one, and audibly even with
+  // the metronome on Visual only: you need to hear it to come in.
+  if (countInBars && !metronome.running) {
+    overdub.prevMetro = { bpm: metronome.bpm, timeSig: metronome.timeSig, clickMode: metronome.clickMode };
+    metronome.set({
+      ...(rec.tempo ? { bpm: rec.tempo } : {}),
+      ...(rec.tempo && rec.timeSig ? { timeSig: rec.timeSig } : {}),
+      ...(metronome.clickMode === 'visual' ? { clickMode: 'audible' } : {}),
+    });
   }
   let s;
   try {
@@ -575,6 +591,7 @@ function endOverdub() {
   releaseAudio('overdub');
   loop.on = od.prevLoopOn;
   if (root && audio) {
+    $('.p-countin-show', root).hidden = true;
     audio.currentTime = od.from;
     renderControls();
   }
@@ -841,6 +858,9 @@ function frame() {
   if (!root) return;
   raf = requestAnimationFrame(frame);
   const t = overdub?.when != null ? overdubTime() : audio.currentTime;
+  // The count-in display goes once the take starts.
+  const ci = $('.p-countin-show', root);
+  if (!ci.hidden && (!overdub || (overdub.when != null && getContext().currentTime - (getContext().outputLatency || 0) >= overdub.when))) ci.hidden = true;
 
   // Loop: fade out just before B, jump to A, fade back in.
   if (loopActive() && !audio.paused && !seamPending) {

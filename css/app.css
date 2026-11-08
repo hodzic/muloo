@@ -591,6 +591,8 @@ body.practice-full .practice { gap: 6px; }
 .tuner:not(.listening) .level { visibility: hidden; }
 /* With overdub parts everything has to fit above the tab bar: a shorter
    waveform, loop and speed on one row, smaller transport. */
+.wave-wrap { position: relative; }
+.p-countin-show { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 72px; font-weight: 800; color: var(--warn); background: color-mix(in srgb, var(--surface) 80%, transparent); pointer-events: none; }
 .share-parts { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; color: var(--muted); }
 .share-parts input { margin-top: 3px; }
 .p-ls { display: flex; flex-direction: column; gap: 12px; }

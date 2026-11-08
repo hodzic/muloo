@@ -98,9 +98,9 @@ const HELP = {
     </ul>
     <h3>Overdub</h3>
     <ul>
-      <li>Overdub plays the take (from A if there is a loop) and records the microphone, so you can add a part on top. Use headphones, or the take is recorded again through the mic. Tap Stop overdub, or play to the end.</li>
-      <li>Bluetooth headphones delay the sound, so the new part usually comes out a little late. Tap Align for the part and drag on the waveform to slide it (the orange wave is the part), or use ◀ 10 ms and 10 ms ▶; play to check.</li>
-      <li>Each part has its own volume; × deletes a part. Sharing sends the mix. Editing mixes the parts into one track first.</li>
+      <li>Overdub plays the take (from A if there is a loop) and records the microphone, so you can add a part on top. With a count-in (the menu beside it, shared with recording) the take starts on the beat after the clicks, at the take's tempo. Use headphones, or the take is recorded again through the mic. Tap Stop overdub, or play to the end.</li>
+      <li>Bluetooth headphones delay the sound, so the new part usually comes out a little late. Tap Align: the waveform zooms to 3 seconds, the rest grey and the part orange. Drag to slide the part until the hits line up, or use ◀ 10 ms and 10 ms ▶; play to check.</li>
+      <li>Each part has its own volume; × deletes a part. If parts together get too loud, the whole mix is turned down instead of distorting. Sharing sends the mix. Editing mixes the parts into one track first.</li>
     </ul>
         <h3>Editor</h3>
     <ul>

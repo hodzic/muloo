@@ -112,10 +112,17 @@ export function shareFileName(rec, ext, suffix = '') {
   return `MuLoo ${rec.name}${suffix} ${date}.${ext}`.replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ');
 }
 
+/** Chrome drops a download's name if it has non-ASCII characters: "Čaša ×3" → "Casa x3". */
+export const asciiName = (name) => name
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/[đĐ]/g, (c) => (c === 'đ' ? 'd' : 'D')).replace(/[øØ]/g, (c) => (c === 'ø' ? 'o' : 'O'))
+  .replace(/ß/g, 'ss').replace(/×/g, 'x').replace(/[‐-―]/g, '-')
+  .replace(/[^\x20-\x7e]+/g, '').replace(/\s+/g, ' ').replace(/ \./g, '.').trim() || 'MuLoo';
+
 export function download(blob, fileName) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = fileName;
+  a.download = asciiName(fileName);
   document.body.append(a);
   a.click();
   a.remove();

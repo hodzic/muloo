@@ -4,7 +4,7 @@ import { loadMix, durationSec } from '../storage/recordings.js';
 import { listScores } from '../scores/scores.js';
 import { encodeWav } from '../util/wav.js';
 import { encodeForSharing, pickFormat, shareFileName, shareOrDownload, download } from './export.js';
-import { withTag, tagFor } from './import.js';
+import { withTag, tagFor, partFiles } from './import.js';
 import { $, escapeHtml, formatBytes, toast } from '../util/dom.js';
 
 const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -26,6 +26,7 @@ export async function openShareDialog(rec) {
       <h2>Share</h2>
       <p class="muted share-name">${escapeHtml(rec.name)}</p>
       <p class="muted share-format">Checking formats…</p>
+      ${rec.parts?.length ? `<label class="share-parts"><input type="checkbox" class="with-parts"> Include the ${rec.parts.length + 1} parts separately, so MuLoo can import them as parts (about twice the size; other apps play the mix)</label>` : ''}
       <button class="btn primary wide" data-what="full">Share take (${fmtDur(durationSec(rec))})</button>
       ${hasLoop ? `<button class="btn wide" data-what="loop">Share A/B loop (${fmtDur(rec.loopB - rec.loopA)})</button>` : ''}
       <button class="btn wide" data-what="wav">Export WAV · full quality (${formatBytes(44 + rec.lengthSamples * 2)})</button>
@@ -68,8 +69,17 @@ export async function openShareDialog(rec) {
         });
       }
       // Loop, speed and score link ride along for a friend's MuLoo.
-      const meta = await tagFor(rec, what === 'loop' ? [rec.loopA, rec.loopB] : null);
-      result.blob = await withTag(result.blob, result.ext, meta);
+      const section = what === 'loop' ? [rec.loopA, rec.loopB] : null;
+      const meta = await tagFor(rec, section);
+      let files = [];
+      if ($('.with-parts', d)?.checked) {
+        // Each part as its own file inside the tag.
+        const p = await partFiles(rec, section, (f) => progress(f, `Adding the parts… ${Math.round(f * 100)}%`));
+        meta.tracks = p.tracks;
+        files = p.files;
+        suffix += ' (parts)';
+      }
+      result.blob = await withTag(result.blob, result.ext, meta, files);
       const name = shareFileName(rec, result.ext, suffix);
       progress(1, `${name} · ${formatBytes(result.blob.size)}`);
       await deliver(d, result.blob, name, rec.name);

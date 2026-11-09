@@ -3,7 +3,7 @@
 // undo restores the previous audio until the next edit or leaving.
 
 import { getContext, holdAudio, releaseAudio } from '../audio/context.js';
-import { getRecording, loadPcm, replacePcm } from '../storage/recordings.js';
+import { getRecording, saveRecording, loadPcm, replacePcm } from '../storage/recordings.js';
 import { isQuotaError } from '../storage/db.js';
 import { int16ToFloat } from '../util/wav.js';
 import { computePeaks, drawWaveform } from './waveform.js';
@@ -35,8 +35,11 @@ const dur = () => (rec ? rec.lengthSamples / rec.sampleRate : 0);
 const viewLen = () => dur() / zoom;
 const fmt = (s) => `${Math.floor(Math.max(0, s) / 60)}:${(Math.max(0, s) % 60).toFixed(2).padStart(5, '0')}`;
 
-/** Open the editor for recording `id` in `host`; onClose(rec) runs on back. */
-export async function openEditor(host, id, { onClose } = {}) {
+/**
+ * Open the editor for recording `id` in `host`; onClose(rec) runs on back.
+ * `title` replaces the name shown (e.g. for an overdub part).
+ */
+export async function openEditor(host, id, { onClose, title } = {}) {
   root = host;
   onCloseCb = onClose;
   root.innerHTML = markup();
@@ -55,7 +58,7 @@ export async function openEditor(host, id, { onClose } = {}) {
   const hasLoop = rec.loopA != null && rec.loopB != null && rec.loopB > rec.loopA;
   sel = hasLoop ? { a: rec.loopA, b: rec.loopB } : { a: 0, b: dur() };
   cursor = sel.a;
-  $('.e-name', root).textContent = rec.name;
+  $('.e-name', root).textContent = title ?? rec.name;
   addEventListener('resize', onResize);
   onResize();
   render();
@@ -127,7 +130,7 @@ function bind() {
     edit('Crop', () => {
       const sr = rec.sampleRate;
       const out = crop(pcm, sel.a * sr, sel.b * sr, sr, 10);
-      return { pcm: out, rec: shiftAfterCrop(rec, sel.a, out.length / sr) };
+      return { pcm: out, rec: shiftAfterCrop(rec, sel.a, out.length / sr), shift: sel.a };
     }, () => { sel = { a: 0, b: dur() }; cursor = 0; viewStart = 0; });
   });
   const gain = $('.e-gain', root);
@@ -159,6 +162,14 @@ function bind() {
   o.addEventListener('pointerup', () => { o.onpointermove = null; });
 }
 
+/** Move overdub part `part` by `d` seconds in its take. */
+async function movePart(part, d) {
+  const take = await getRecording(part.partOf);
+  if (!take?.parts) return;
+  const parts = take.parts.map((p) => (p.id === part.id ? { ...p, offset: Math.round((p.offset + d) * 1000) / 1000 } : p));
+  await saveRecording({ ...take, parts });
+}
+
 /** Keep loop points and the beat grid meaningful after a crop. */
 function shiftAfterCrop(r, start, newDur) {
   const out = { ...r };
@@ -184,10 +195,13 @@ async function edit(label, op, after) {
   stopPlayback();
   setBusy(true);
   try {
-    const before = { rec, pcm };
+    const before = { rec, pcm, shift: 0 };
     const result = op();
     rec = await replacePcm(result.rec, result.pcm);
     pcm = result.pcm;
+    // An overdub part keeps its place in the take: cropping its start moves it later.
+    if (result.shift && rec.partOf) await movePart(rec, result.shift);
+    before.shift = result.shift ?? 0;
     undo = before;
     peaksCache.clear();
     after?.();
@@ -208,6 +222,7 @@ async function doUndo() {
   try {
     rec = await replacePcm(undo.rec, undo.pcm);
     pcm = undo.pcm;
+    if (undo.shift && rec.partOf) await movePart(rec, -undo.shift);
     undo = null;
     peaksCache.clear();
     sel = { a: 0, b: dur() };

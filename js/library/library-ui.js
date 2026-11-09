@@ -91,9 +91,10 @@ function showPlayer(id) {
   openPlayer(host, id, { onClose: showList, onEdit: showEditor });
 }
 
-function showEditor(id) {
+/** Edit take `id`, or an overdub part (`returnTo` is then its take, which opens again after). */
+function showEditor(id, { returnTo = id, title } = {}) {
   const host = $('.player-host', root);
-  openEditor(host, id, { onClose: () => showPlayer(id) });
+  openEditor(host, id, { title, onClose: () => showPlayer(returnTo) });
 }
 
 async function render() {

@@ -130,7 +130,7 @@ function bind() {
     edit('Crop', () => {
       const sr = rec.sampleRate;
       const out = crop(pcm, sel.a * sr, sel.b * sr, sr, 10);
-      return { pcm: out, rec: shiftAfterCrop(rec, sel.a, out.length / sr), shift: sel.a };
+      return { pcm: out, rec: shiftParts(shiftAfterCrop(rec, sel.a, out.length / sr), sel.a), shift: sel.a };
     }, () => { sel = { a: 0, b: dur() }; cursor = 0; viewStart = 0; });
   });
   const gain = $('.e-gain', root);
@@ -168,6 +168,15 @@ async function movePart(part, d) {
   if (!take?.parts) return;
   const parts = take.parts.map((p) => (p.id === part.id ? { ...p, offset: Math.round((p.offset + d) * 1000) / 1000 } : p));
   await saveRecording({ ...take, parts });
+}
+
+/**
+ * The original of a take with overdub parts: cropping its start moves the
+ * parts earlier by as much, so they stay where they were against it.
+ */
+function shiftParts(r, start) {
+  if (!r.parts?.length || !start) return r;
+  return { ...r, parts: r.parts.map((p) => ({ ...p, offset: Math.round((p.offset - start) * 1000) / 1000 })) };
 }
 
 /** Keep loop points and the beat grid meaningful after a crop. */

@@ -341,7 +341,7 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .rec-tools { display: flex; justify-content: flex-end; margin-bottom: 8px; }
 .rec-tools .btn { padding: 0 14px; display: inline-flex; align-items: center; cursor: pointer; }
 .rec-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.rec { display: flex; align-items: center; gap: 12px; padding: 8px 8px 8px 12px; background: var(--surface); border-radius: var(--radius); border: 1px solid transparent; }
+.rec { display: flex; align-items: center; gap: 4px; padding: 8px 4px 8px 12px; background: var(--surface); border-radius: var(--radius); border: 1px solid transparent; }
 .rec.highlight { border-color: var(--accent); }
 .rec .play { font-size: 18px; flex: none; }
 .rec.playing .play { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
@@ -349,7 +349,7 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .rec-name { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rec-meta { color: var(--muted); font-size: 13px; }
 .tag { font-size: 11px; font-weight: 600; color: var(--warn); border: 1px solid currentColor; border-radius: 4px; padding: 0 4px; vertical-align: middle; }
-.rec .delete { flex: none; width: var(--tap); }
+.rec .delete { flex: none; width: 40px; }
 .rec-list .placeholder { list-style: none; margin-top: 30vh; }
 
 /* Recordings list rows open the player */
@@ -383,9 +383,11 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .p-layer svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 .p-layer.aligning > span { color: var(--accent); font-weight: 600; }
 .p-layer .p-align-btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
-.p-align { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 14px; }
-.p-align-text { flex: 1 1 100%; color: var(--accent); font-variant-numeric: tabular-nums; }
-.p-align .btn { flex: 1; padding: 0 8px; min-height: 40px; }
+.p-align { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.p-align-info { display: flex; align-items: baseline; gap: 8px; }
+.p-align-btns { display: flex; gap: 6px; }
+.p-align-text { color: var(--accent); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.p-align .btn { flex: 1; padding: 0 6px; min-height: 40px; white-space: nowrap; }
 .p-overdub .rec-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--bad, #e5484d); }
 .p-overdub.recording { border-color: var(--bad, #e5484d); color: var(--bad, #e5484d); }
 .p-overdub.recording .rec-dot { border-radius: 2px; }
@@ -442,7 +444,9 @@ body.immersive .page-stage { border-radius: 0; }
 button.player-title { flex: 1; appearance: none; border: 0; background: none; color: inherit; font: inherit; text-align: left; padding: 4px 0; min-height: var(--tap); }
 .player-head .btn.icon { width: var(--tap); flex: none; }
 .player-head .player-title { flex: 1; }
-.rec .share { flex: none; width: var(--tap); }
+.rec .share, .rec .duplicate { flex: none; width: 40px; }
+/* In the list a long name wraps to a second line rather than hiding "(copy)" or the tags. */
+.rec-list .rec-name { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
 
 /* Editor */
 .editor { flex: 1; display: flex; flex-direction: column; gap: 10px; position: relative; }
@@ -599,8 +603,7 @@ body.practice-full .practice { gap: 6px; }
 .p-od-row { display: flex; gap: 8px; }
 .p-od-row .p-overdub { flex: 1; }
 .p-countin { flex: none; width: auto; }
-.p-align-text { flex: none !important; }
-.p-align-hint { flex: 1 1 auto; font-size: 12px; text-align: right; }
+.p-align-hint { flex: 1 1 auto; min-width: 0; font-size: 12px; text-align: right; }
 .player.has-parts, .player.overdubbing { gap: 8px; }
 .player.has-parts .wave-wrap, .player.overdubbing .wave-wrap { flex: none; height: 130px; min-height: 0; }
 .player.has-parts .p-ls { flex-direction: row; align-items: center; gap: 8px; }

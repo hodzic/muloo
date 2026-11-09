@@ -312,11 +312,12 @@ function markup() {
       <div class="p-parts">
         <div class="p-layers"></div>
         <div class="p-align" hidden>
-          <span class="p-align-text"></span>
-          <span class="p-align-hint muted">Zoomed to ${ZOOM_SEC} s · drag to move the part</span>
-          <button class="btn p-nudge" data-d="-1" aria-label="10 ms earlier">◀ 10 ms</button>
-          <button class="btn p-nudge" data-d="1" aria-label="10 ms later">10 ms ▶</button>
-          <button class="btn p-align-done">Done</button>
+          <div class="p-align-info"><span class="p-align-text"></span><span class="p-align-hint muted">Zoomed to ${ZOOM_SEC} s · drag to move</span></div>
+          <div class="p-align-btns">
+            <button class="btn p-nudge" data-d="-1" aria-label="10 ms earlier">◀ 10 ms</button>
+            <button class="btn p-nudge" data-d="1" aria-label="10 ms later">10 ms ▶</button>
+            <button class="btn p-align-done">Done</button>
+          </div>
         </div>
         <div class="p-od-row">
           <button class="btn p-overdub"><span class="rec-dot"></span> <span class="p-overdub-label">Overdub</span></button>
@@ -380,6 +381,13 @@ function bind() {
     if (!row || !rec) return;
     const id = row.dataset.layer;
     if (e.target.closest('.p-align-btn')) startAlign(align?.id === id ? null : id);
+    else if (e.target.closest('.p-edit-part')) {
+      // The editor works on the part's own audio, then comes back to this take.
+      const n = rec.parts.findIndex((p) => p.id === id) + 2, take = rec, cb = onEditCb;
+      flushSave();
+      closePlayer();
+      cb?.(id, { returnTo: take.id, title: `${take.name} · Part ${n}` });
+    }
     else if (e.target.closest('.p-del-part')) {
       if (!confirm('Delete this part?')) return;
       if (align?.id === id) startAlign(null);
@@ -503,6 +511,7 @@ function renderParts() {
         <div class="p-layer${align?.id === p.id ? ' aligning' : ''}" data-layer="${p.id}">
           <span>Part ${i + 2}</span>${vol(p.gain, `Part ${i + 2}`)}
           <button class="btn p-align-btn" aria-pressed="${align?.id === p.id}"${busy ? ' disabled' : ''}>Align</button>
+          <button class="btn icon p-edit-part" aria-label="Edit part ${i + 2} (crop, gain)"${busy ? ' disabled' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM6 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7.5 7.5L20 18M7.5 16.5L20 6"/></svg></button>
           <button class="btn icon p-del-part" aria-label="Delete part ${i + 2}"${busy ? ' disabled' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         </div>`),
     ].join('');

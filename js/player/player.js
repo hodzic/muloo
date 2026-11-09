@@ -382,11 +382,13 @@ function bind() {
     const id = row.dataset.layer;
     if (e.target.closest('.p-align-btn')) startAlign(align?.id === id ? null : id);
     else if (e.target.closest('.p-edit-part')) {
-      // The editor works on the part's own audio, then comes back to this take.
-      const n = rec.parts.findIndex((p) => p.id === id) + 2, take = rec, cb = onEditCb;
+      // The editor works on that track's own audio (the original: the take
+      // itself, its parts kept), then comes back to this take.
+      const take = rec, cb = onEditCb;
+      const label = id === 'base' ? 'Original' : `Part ${rec.parts.findIndex((p) => p.id === id) + 2}`;
       flushSave();
       closePlayer();
-      cb?.(id, { returnTo: take.id, title: `${take.name} · Part ${n}` });
+      cb?.(id === 'base' ? take.id : id, { returnTo: take.id, title: `${take.name} · ${label}` });
     }
     else if (e.target.closest('.p-del-part')) {
       if (!confirm('Delete this part?')) return;
@@ -506,7 +508,8 @@ function renderParts() {
     layers.dataset.key = key;
     const vol = (v, label) => `<input type="range" min="0" max="1.5" step="0.05" value="${v}" aria-label="${label} volume">`;
     layers.innerHTML = !parts.length ? '' : [
-      `<div class="p-layer" data-layer="base"><span>Original</span>${vol(rec.baseGain ?? 1, 'Original')}</div>`,
+      `<div class="p-layer" data-layer="base"><span>Original</span>${vol(rec.baseGain ?? 1, 'Original')}
+        <button class="btn icon p-edit-part" aria-label="Edit the original (crop, gain)"${busy ? ' disabled' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM6 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7.5 7.5L20 18M7.5 16.5L20 6"/></svg></button></div>`,
       ...parts.map((p, i) => `
         <div class="p-layer${align?.id === p.id ? ' aligning' : ''}" data-layer="${p.id}">
           <span>Part ${i + 2}</span>${vol(p.gain, `Part ${i + 2}`)}

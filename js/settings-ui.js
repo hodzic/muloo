@@ -4,7 +4,7 @@ import { listInputs, setInputDevice, setInputGainDb, looksBluetooth, getInput, o
 import { settings } from './storage/db.js';
 import { $, escapeHtml, formatBytes } from './util/dom.js';
 
-export const APP_VERSION = '2026-11-10b';
+export const APP_VERSION = '2026-11-10c';
 
 const METER_FLOOR_DB = -60;
 const CLIP_HOLD_MS = 2000;
@@ -36,6 +36,11 @@ export function initSettings(button, dlg) {
         </div>
       </div>
       <p class="warn mic-error" hidden></p>
+      <h3>Overdub</h3>
+      <label>Delay correction <output class="od-delay-out"></output>
+        <input class="od-delay" type="range" min="0" max="500" step="5">
+      </label>
+      <p class="muted">New overdub parts are moved this much earlier, to make up for the headphone (Bluetooth) and mic delay. Line up one part by hand, then tap “Use for new parts” under Align to set it from that.</p>
       <h3>Storage</h3>
       <p class="storage muted">…</p>
       <p class="muted">MuLoo version ${APP_VERSION} · all data stays on this device.</p>
@@ -57,6 +62,10 @@ export function initSettings(button, dlg) {
     setInputGainDb(+e.target.value);
     $('.gain-out', dialog).textContent = `+${e.target.value} dB`;
   });
+  $('.od-delay', dialog).addEventListener('input', (e) => {
+    settings.set('overdub.delayMs', +e.target.value);
+    $('.od-delay-out', dialog).textContent = `${e.target.value} ms`;
+  });
   onInputChange(() => { if (dialog.open) renderDevices(); });
   $('.level-check', dialog).addEventListener('click', () => (checking ? stopCheck() : startCheck()));
   dialog.addEventListener('close', stopCheck);
@@ -65,6 +74,9 @@ export function initSettings(button, dlg) {
     const g = settings.get('inputGainDb', 0);
     $('.input-gain', dialog).value = g;
     $('.gain-out', dialog).textContent = `+${g} dB`;
+    const d = settings.get('overdub.delayMs', 0);
+    $('.od-delay', dialog).value = d;
+    $('.od-delay-out', dialog).textContent = `${d} ms`;
     renderDevices();
     renderStorage();
     checkUpdate();

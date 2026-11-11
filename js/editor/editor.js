@@ -212,7 +212,9 @@ function snap(t, how = Math.round) {
 async function movePart(part, d) {
   const take = await getRecording(part.partOf);
   if (!take?.parts) return;
-  const parts = take.parts.map((p) => (p.id === part.id ? { ...p, offset: Math.round((p.offset + d) * 1000) / 1000 } : p));
+  const move = (t) => Math.round((t + d) * 1000) / 1000;
+  // `placed` (where the clocks put it) moves too: only the hand correction stays.
+  const parts = take.parts.map((p) => (p.id === part.id ? { ...p, offset: move(p.offset), ...(p.placed != null ? { placed: move(p.placed) } : {}) } : p));
   await saveRecording({ ...take, parts });
 }
 
@@ -222,7 +224,8 @@ async function movePart(part, d) {
  */
 function shiftParts(r, start) {
   if (!r.parts?.length || !start) return r;
-  return { ...r, parts: r.parts.map((p) => ({ ...p, offset: Math.round((p.offset - start) * 1000) / 1000 })) };
+  const move = (t) => Math.round((t - start) * 1000) / 1000;
+  return { ...r, parts: r.parts.map((p) => ({ ...p, offset: move(p.offset), ...(p.placed != null ? { placed: move(p.placed) } : {}) })) };
 }
 
 /** Keep loop points and the beat grid meaningful after a crop. */

@@ -79,3 +79,41 @@ export function drawWaveform(canvas, peaks, { a = null, b = null, loopOn = false
   if (b != null) marker(b, colors.handle, labels[1]);
   if (playhead != null) marker(playhead, colors.playhead);
 }
+
+/**
+ * Bar lines (and beat lines with `beats`) over a waveform showing seconds
+ * [t0, t1]; `grid` = { first: first downbeat, beat, perBar } in seconds.
+ * Lines too close together are left out; bars are numbered where there's room.
+ */
+export function drawBars(canvas, { t0, t1, grid, beats = false, color, numbers = false }) {
+  if (!grid || !(t1 > t0)) return;
+  const g = canvas.getContext('2d'), W = canvas.width, H = canvas.height, dpr = W / canvas.clientWidth || 1;
+  const pxPer = W / (t1 - t0), bar = grid.beat * grid.perBar;
+  g.fillStyle = color;
+  for (const [step, alpha] of [[bar, 0.45], ...(beats ? [[grid.beat, 0.18]] : [])]) {
+    if (step * pxPer < 6 * dpr) continue;
+    g.globalAlpha = alpha;
+    for (let t = grid.first + Math.ceil((t0 - grid.first) / step) * step; t <= t1; t += step) {
+      g.fillRect(Math.round((t - t0) * pxPer), 0, Math.max(1, dpr), H);
+    }
+  }
+  if (numbers) {
+    // Bar 1 starts at the first downbeat; label every n-th bar so they fit.
+    const every = Math.max(1, Math.ceil((28 * dpr) / (bar * pxPer)));
+    g.globalAlpha = 0.7;
+    g.font = `${11 * dpr}px system-ui, sans-serif`;
+    g.textAlign = 'left';
+    g.textBaseline = 'bottom';
+    let k = Math.ceil((t0 - grid.first) / bar - 1e-6);
+    for (let t = grid.first + k * bar; t <= t1; t += bar, k++) {
+      if (k >= 0 && k % every === 0) g.fillText(String(k + 1), Math.round((t - t0) * pxPer) + 3 * dpr, H - 2 * dpr);
+    }
+  }
+  g.globalAlpha = 1;
+}
+
+/** The bar grid of a take, or null without a tempo. */
+export function barGrid(rec, timeSigs, shift = 0) {
+  if (!rec?.tempo) return null;
+  return { first: (rec.firstBeatSec ?? 0) - shift, beat: 60 / rec.tempo, perBar: timeSigs[rec.timeSig]?.beats ?? 4 };
+}

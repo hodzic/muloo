@@ -105,6 +105,7 @@ const HELP = {
       <li>The scissors on the original or a part open the editor for just that track: crop it, change its gain or normalize it. Everything stays lined up: cropping the start of a part keeps the rest of it where it was, and cropping the start of the original moves all parts along with it. E.g. after a loop overdub, trim the original's last repeat. Back returns to the take.</li>
       <li>The scissors at the top edit the whole take: the parts are mixed into one track first.</li>
       <li>Tap a track's name to rename it.</li>
+      <li>Takes recorded with the metronome show numbered bar lines on the waveform (and beat lines while lining up a part); Bars beside Loop turns them off or on.</li>
       <li>Each part has its own volume; × deletes a part. If parts together get too loud, the whole mix is turned down instead of distorting. Sharing sends the mix; tick “Include the parts separately” to also send each part, so a friend’s MuLoo imports the take with its parts (other apps still play the mix). Editing mixes the parts into one track first.</li>
     </ul>
         <h3>Editor</h3>

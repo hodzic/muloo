@@ -7,7 +7,7 @@ import { getRecording, saveRecording, loadPcm, replacePcm } from '../storage/rec
 import { isQuotaError, settings } from '../storage/db.js';
 import { TIME_SIGS } from '../metronome/scheduler.js';
 import { int16ToFloat } from '../util/wav.js';
-import { computePeaks, drawWaveform } from './waveform.js';
+import { computePeaks, drawWaveform, drawBars, barGrid } from './waveform.js';
 import { crop, applyGain, normalize, peakDb } from './edit-ops.js';
 import { $, $$, escapeHtml, toast } from '../util/dom.js';
 
@@ -193,8 +193,7 @@ async function loadGrid() {
     if (!p) return;
     shift = p.offset;
   }
-  if (!take?.tempo) return;
-  grid = { first: (take.firstBeatSec ?? 0) - shift, beat: 60 / take.tempo, perBar: TIME_SIGS[take.timeSig]?.beats ?? 4 };
+  grid = barGrid(take, TIME_SIGS, shift);
 }
 
 const snapMode = () => (grid ? settings.get('editor.snap', 'free') : 'free');
@@ -361,29 +360,11 @@ function draw(playhead = null) {
   const peaks = { min: all.min.subarray(off, off + width), max: all.max.subarray(off, off + width) };
   const f = (t) => (t - viewStart) / viewLen();
   drawWaveform(c, peaks, { a: f(sel.a), b: f(sel.b), loopOn: true, playhead: playhead ?? f(cursor), colors, labels: ['', ''] });
-  drawGrid(c);
+  if (snapUnit()) drawBars(c, { t0: viewStart, t1: viewStart + viewLen(), grid, beats: snapMode() === 'beat', color: colors.playhead, numbers: true });
   if (zoom > 1) {
     const o = $('.e-overview', root);
     drawWaveform(o, peaksFor(1), { a: viewStart / dur(), b: (viewStart + viewLen()) / dur(), loopOn: false, colors, labels: ['', ''] });
   }
-}
-
-/** Snap lines over the waveform: bars, and beats too when snapping to them, where there's room. */
-function drawGrid(c) {
-  const u = snapUnit();
-  if (!u) return;
-  const g = c.getContext('2d'), W = c.width, H = c.height, dpr = W / c.clientWidth || 1;
-  const pxPer = W / viewLen();
-  const bar = grid.beat * grid.perBar;
-  for (const [step, alpha] of [[bar, 0.45], ...(u < bar ? [[grid.beat, 0.18]] : [])]) {
-    if (step * pxPer < 6 * dpr) continue;
-    g.fillStyle = colors.playhead;
-    g.globalAlpha = alpha;
-    for (let t = grid.first + Math.ceil((viewStart - grid.first) / step) * step; t <= viewStart + viewLen(); t += step) {
-      g.fillRect(Math.round((t - viewStart) * pxPer), 0, Math.max(1, dpr), H);
-    }
-  }
-  g.globalAlpha = 1;
 }
 
 // Pointer: drag a selection edge, drag on empty space to select, tap to place the cursor.

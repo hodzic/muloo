@@ -16,7 +16,7 @@ import { metronome, TIME_SIGS } from '../metronome/scheduler.js';
 import { settings } from '../storage/db.js';
 import { int16ToFloat } from '../util/wav.js';
 import { encodeWav } from '../util/wav.js';
-import { computePeaks, drawWaveform } from '../editor/waveform.js';
+import { computePeaks, drawWaveform, drawBars, barGrid } from '../editor/waveform.js';
 import { holdWakeLock, releaseWakeLock } from '../util/wakelock.js';
 import { openShareDialog, openDetailsDialog } from '../library/dialogs.js';
 import { getScore, openPdf } from '../scores/scores.js';
@@ -300,6 +300,7 @@ function markup() {
       <div class="p-ls">
       <div class="loop-row">
         <button class="btn loop-toggle" aria-pressed="false">Loop</button>
+        <button class="btn bars-toggle" aria-pressed="false" aria-label="Show bar lines" hidden>Bars</button>
         <button class="btn icon clear-loop" aria-label="Clear loop">${svg('M6 6l12 12M18 6L6 18')}</button>
       </div>
       <div class="speed-row">
@@ -422,6 +423,10 @@ function bind() {
     loop.on = !loop.on;
     changed();
   });
+  $('.bars-toggle', root).addEventListener('click', () => {
+    settings.set('player.bars', !settings.get('player.bars', true));
+    renderControls();
+  });
   $('.clear-loop', root).addEventListener('click', () => {
     loop = { a: null, b: null, on: false };
     changed();
@@ -437,6 +442,8 @@ function bind() {
 }
 
 const loopActive = () => loop.on && loop.a != null && loop.b != null;
+/** Bar lines on the waveform: for takes with a tempo, unless turned off. */
+const showBars = () => !!rec?.tempo && settings.get('player.bars', true);
 
 async function togglePlay() {
   if (!rec) return;
@@ -488,6 +495,10 @@ function renderControls() {
   t.classList.toggle('selected', loopActive());
   t.setAttribute('aria-pressed', loopActive());
   t.disabled = loop.a == null || loop.b == null;
+  const bars = $('.bars-toggle', root);
+  bars.hidden = !rec.tempo;
+  bars.classList.toggle('selected', showBars());
+  bars.setAttribute('aria-pressed', showBars());
   $('.loop-times', root).textContent = loop.a != null
     ? `A ${fmt(loop.a)}${loop.b != null ? ` – B ${fmt(loop.b)}` : ''}`
     : 'Drag to loop';
@@ -950,6 +961,7 @@ function frame() {
       colors,
       overlay: { peaks: z.partPeaks, x: 0, w: 1, color: colors.part },
     });
+    if (showBars()) drawBars($('.wave', root), { t0: z.t0, t1: z.t1, grid: barGrid(rec, TIME_SIGS), beats: true, color: colors.playhead, numbers: true });
   } else if (peaks && duration > 0) {
     drawWaveform($('.wave', root), peaks, {
       a: loop.a != null ? loop.a / duration : null,
@@ -958,6 +970,7 @@ function frame() {
       playhead: t / duration,
       colors,
     });
+    if (showBars()) drawBars($('.wave', root), { t0: 0, t1: duration, grid: barGrid(rec, TIME_SIGS), color: colors.playhead, numbers: true });
   }
   if (!levelBuf) levelBuf = new Float32Array(analyser.fftSize);
   const { peakDb } = readLevel(analyser, levelBuf);

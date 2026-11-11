@@ -61,6 +61,7 @@ const HELP = {
     <h3>Recording</h3>
     <ul>
       <li>Choose the count-in, then Record. The metronome starts with the recording and the take opens in Recordings when you stop. Takes stop by themselves after 15 minutes.</li>
+      <li>With the metronome already clicking, the count-in starts at the next bar line, in time with it, and Stop lets the take run on to the end of the bar, so it ends on the bar line (tap Stop now to cut it there and then).</li>
       <li>A take recorded with a score remembers where you were, so the score can scroll along on playback.</li>
     </ul>`,
 
@@ -98,16 +99,18 @@ const HELP = {
     </ul>
     <h3>Overdub</h3>
     <ul>
-      <li>Overdub plays the take (from A if there is a loop) and records the microphone, so you can add a part on top. With a count-in (the menu beside it, shared with recording) the take starts on the beat after the clicks, at the take's tempo. The count-in clicks even with the metronome on Visual only, and shows on the waveform. Use headphones, or the take is recorded again through the mic. Tap Stop overdub, or play to the end.</li>
+      <li>Overdub plays the take (from A if there is a loop) and records the microphone, so you can add a part on top. With a count-in (the menu beside it, shared with recording) the take starts on the beat after the clicks, at the take's tempo. The count-in clicks even with the metronome on Visual only, and shows on the waveform. Use headphones, or the take is recorded again through the mic. Tap Stop overdub, or play to the end. With the metronome clicking, the count-in follows its beat and the overdub stops at the end of the bar. Afterwards the take plays on with the new part in (after a loop overdub, the new take, looped).</li>
       <li>Bluetooth headphones delay the sound, so the new part usually comes out a little late. Tap Align: the waveform zooms to 3 seconds, the rest grey and the part orange. Drag to slide the part until the hits line up, or use ◀ 10 ms and 10 ms ▶; play to check.</li>
       <li>With the loop on, the button says Overdub over loop: the loop repeats for as long as you play. When you stop, you get a new take with the loop repeated that many times, the earlier parts kept as parts, and your new part on top; the original take stays as it was.</li>
       <li>The scissors on the original or a part open the editor for just that track: crop it, change its gain or normalize it. Everything stays lined up: cropping the start of a part keeps the rest of it where it was, and cropping the start of the original moves all parts along with it. E.g. after a loop overdub, trim the original's last repeat. Back returns to the take.</li>
       <li>The scissors at the top edit the whole take: the parts are mixed into one track first.</li>
+      <li>Tap a track's name to rename it.</li>
       <li>Each part has its own volume; × deletes a part. If parts together get too loud, the whole mix is turned down instead of distorting. Sharing sends the mix; tick “Include the parts separately” to also send each part, so a friend’s MuLoo imports the take with its parts (other apps still play the mix). Editing mixes the parts into one track first.</li>
     </ul>
         <h3>Editor</h3>
     <ul>
       <li>The scissors button opens the editor. Drag to select; zoom 1×, 4× or 16× to be precise, and All selects everything.</li>
+      <li>For a take with a tempo (recorded with the metronome), Snap to Beat or Bar makes the selection edges jump to the beat or bar lines, drawn on the waveform; Free selects anywhere.</li>
       <li>Crop keeps only the selection. Gain makes the selection louder or quieter; Normalize brings the loudest point up to just below clipping.</li>
       <li>Edits are saved straight away. Undo takes back the last one.</li>
     </ul>`,

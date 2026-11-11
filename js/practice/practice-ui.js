@@ -6,7 +6,7 @@ import { metronome } from '../metronome/scheduler.js';
 import { createMiniMetronome } from '../metronome/metronome-ui.js';
 import { mountScorePanel, enterScorePanel, leaveScorePanel, hasScore, startFollow, scoreLink, useScore } from './practice-score.js';
 import { getInput, readLevel, looksBluetooth, onInputChange } from '../audio/input.js';
-import { startRecording, stopRecording, isRecording, elapsedSec, onRecorderChange, MAX_SECONDS } from '../recorder/recorder.js';
+import { startRecording, stopRecording, isRecording, isStopping, elapsedSec, onRecorderChange, MAX_SECONDS } from '../recorder/recorder.js';
 import { settings, isQuotaError } from '../storage/db.js';
 import { $, escapeHtml, toast, navigate } from '../util/dom.js';
 import { openTabHelp } from '../util/tab-help.js';
@@ -125,11 +125,14 @@ function renderInput(input) {
 }
 
 async function toggleRecording() {
+  // Running on to the bar line: a second tap stops right away.
+  if (isStopping()) { stopRecording(); return; }
   if (busy) return;
   busy = true;
   try {
     if (isRecording()) {
-      const { rec, error } = await stopRecording();
+      // With the clicks on, the take ends at the end of the bar.
+      const { rec, error } = await stopRecording({ atBarEnd: true });
       reportError(error);
       if (rec) navigate('recordings', { recordingId: rec.id, open: true });
     } else {
@@ -170,7 +173,7 @@ function renderRecording() {
   $('.stage', root).classList.toggle('recording', rec);
   const btn = $('.record', root);
   btn.classList.toggle('active', rec);
-  btn.textContent = rec ? '■ Stop' : '● Record';
+  btn.textContent = !rec ? '● Record' : isStopping() ? '■ Stop now' : '■ Stop';
   $('.count-in-select', root).disabled = rec;
   if (!rec) $('.count-in-overlay', root).hidden = true;
   document.body.classList.toggle('is-recording', rec);

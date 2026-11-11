@@ -31,6 +31,10 @@ export function onRecorderChange(fn) {
 const emit = () => listeners.forEach((fn) => fn(session));
 
 export const isRecording = () => session != null;
+/** Stop was asked for and the take is running on to the end of the bar. */
+export const isStopping = () => session?.endTime != null;
+/** While stopping at a bar line: the AudioContext time the take ends. */
+export const stopTime = () => session?.endTime ?? null;
 
 export function elapsedSec() {
   return session ? session.samples / session.rec.sampleRate : 0;
@@ -102,6 +106,10 @@ export async function startRecording({ countInBars = 0, startMetronome = null, s
       firstAt: null, // performance.now() time of the take's first sample
       bars: [],
       stopping: null,
+      closing: false, // finalizing: no more samples except the worklet's last
+      endTime: null, // stopping at a bar line: its AudioContext time
+      maxSamples: null,
+      reachedEnd: null,
       onStopped: null,
     };
     session = s;
@@ -183,7 +191,12 @@ function afterCut(s, data, rate) {
 }
 
 function append(s, f32) {
-  if (s.stopping && !s.onStopped) return;
+  if (s.closing && !s.onStopped) return;
+  if (s.maxSamples != null) {
+    const room = s.maxSamples - s.samples;
+    if (f32.length >= room) { f32 = f32.subarray(0, Math.max(0, room)); s.reachedEnd?.(); }
+    if (!f32.length) return;
+  }
   const pcm = floatToInt16(f32);
   let off = 0;
   while (off < pcm.length) {
@@ -221,14 +234,44 @@ export function recordBar(time, measureIndex) {
 }
 
 /**
+ * Where a take stopped now ends with `atBarEnd`: the end of the bar playing
+ * (as heard) when the clicks are on, else null (now).
+ */
+function barEnd(s) {
+  if (!s.node || s.startTime == null || !metronome.running) return null;
+  const ctx = getContext();
+  const heard = ctx.currentTime - (ctx.outputLatency || 0);
+  if (s.firstBeatTime != null && heard < s.firstBeatTime) return null; // still counting in
+  const end = metronome.barEndAt(Math.max(heard, s.firstBeatTime ?? heard));
+  return end != null && end > ctx.currentTime ? end : null;
+}
+
+/**
  * Stop and finalize. Resolves to { rec, error, firstAt }; rec is null if
  * nothing was captured. error is set if storage failed (the take keeps what
  * was saved). firstAt: performance.now() time of the first sample.
+ * `atBarEnd`: with the metronome clicking, record on to the end of the bar
+ * (cut exactly there). Calling again meanwhile stops right away.
  */
-export function stopRecording() {
+export function stopRecording({ atBarEnd = false } = {}) {
   const s = session;
   if (!s) return Promise.resolve({ rec: null, error: null });
-  s.stopping ??= (async () => {
+  if (s.stopping) { s.reachedEnd?.(); return s.stopping; }
+  const end = atBarEnd ? barEnd(s) : null;
+  if (end != null) {
+    s.endTime = end;
+    s.maxSamples = Math.max(s.samples, Math.round((end - s.startTime) * s.rec.sampleRate));
+  }
+  s.stopping = (async () => {
+    if (end != null) {
+      await new Promise((resolve) => {
+        s.reachedEnd = resolve;
+        setTimeout(resolve, (end - getContext().currentTime + 1.5) * 1000);
+      });
+      s.reachedEnd = null;
+      s.maxSamples = s.samples; // stopped early: nothing more
+    }
+    s.closing = true;
     if (s.node) {
       await new Promise((resolve) => {
         s.onStopped = resolve;

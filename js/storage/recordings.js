@@ -84,7 +84,7 @@ export async function loadMix(rec) {
 /** Replace the take's audio with the mix and drop the parts. Resolves to the saved recording. */
 export async function mergeParts(rec) {
   const mix = await loadMix(rec);
-  const { parts = [], baseGain, ...rest } = rec;
+  const { parts = [], baseGain, baseName, ...rest } = rec;
   const updated = await replacePcm(rest, mix);
   for (const p of parts) await deleteRecording(p.id);
   return updated;

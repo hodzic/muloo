@@ -111,6 +111,9 @@ export class Metronome {
   #stopAt = null;
   #hookedBar = null;
   #beatTime = 0;
+  #barStart = 0; // time and length of the last bar scheduled
+  #barDur = 0;
+  #countInNext = 0; // bars of count-in to start at the next bar (running)
 
   /** Visual beat: called on the animation frame when a scheduled click is heard. */
   onBeat(fn) { return this.#on('beat', fn); }
@@ -188,9 +191,23 @@ export class Metronome {
   /**
    * Count in for `bars` bars, then keep going (or stop if keepClicking is
    * false). Returns the AudioContext time of the first beat after the count-in.
+   * Already clicking (and keeping on): the count-in starts at the next bar
+   * line, in time with the clicks, instead of restarting them.
    */
   countIn(bars, { atTime, keepClicking = true } = {}) {
+    if (this.running && keepClicking && atTime == null) {
+      this.#countInNext = bars;
+      return this.#barStart + this.#barDur + bars * this.barDuration;
+    }
     return this.#begin(atTime, bars, keepClicking) + bars * this.barDuration;
+  }
+
+  /** While running: the AudioContext time the bar playing at `t` ends. */
+  barEndAt(t) {
+    if (!this.running || !this.#barDur) return null;
+    let end = this.#barStart;
+    while (end <= t + 1e-6) end += this.#barDur;
+    return end;
   }
 
   stop() {
@@ -200,6 +217,7 @@ export class Metronome {
     cancelAnimationFrame(this.#raf);
     this.#queue = [];
     this.#stopAt = null;
+    this.#countInNext = 0;
     if (this.#out) {
       const out = this.#out;
       out.gain.cancelScheduledValues(0);
@@ -230,6 +248,9 @@ export class Metronome {
     this.#stopAt = keepClicking ? null : this.#next + countInBars * this.barDuration;
     this.#hookedBar = null;
     this.#beatTime = this.#next;
+    this.#barStart = this.#next;
+    this.#barDur = 0;
+    this.#countInNext = 0;
     this.rampFrom = null;
     this.#out = ctx.createGain();
     this.#out.gain.value = this.volume;
@@ -248,6 +269,11 @@ export class Metronome {
     const until = ctx.currentTime + LOOKAHEAD;
     while (this.#next < until) {
       if (this.#stopAt != null && this.#next >= this.#stopAt - 1e-6) break;
+      if (this.#countInNext && this.#beat === 0 && this.#sub === 0) {
+        this.#bar = -this.#countInNext;
+        this.#countInNext = 0;
+        this.#hookedBar = null;
+      }
       if (this.barHook && this.#beat === 0 && this.#sub === 0 && this.#bar >= 0 && this.#hookedBar !== this.#bar) {
         this.#hookedBar = this.#bar;
         const patch = this.barHook(this.#bar);
@@ -263,7 +289,11 @@ export class Metronome {
       const subs = countIn ? 1 : SUBDIVISIONS[this.subdivision];
       if (this.#beat >= sig.beats) { this.#beat = 0; this.#bar++; }
       const beat = this.#beat, sub = this.#sub;
-      if (beat === 0 && sub === 0) this.#speedUp();
+      if (beat === 0 && sub === 0) {
+        this.#speedUp();
+        this.#barStart = this.#next;
+        this.#barDur = this.barDuration;
+      }
       if (sub === 0) this.#beatTime = this.#next;
       // The count-in clicks every beat, accent on 1.
       const level = countIn ? (beat === 0 ? 3 : 1) : this.beatLevels[beat] ?? 1;

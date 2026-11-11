@@ -4,7 +4,8 @@
 
 import { getContext, holdAudio, releaseAudio } from '../audio/context.js';
 import { getRecording, saveRecording, loadPcm, replacePcm } from '../storage/recordings.js';
-import { isQuotaError } from '../storage/db.js';
+import { isQuotaError, settings } from '../storage/db.js';
+import { TIME_SIGS } from '../metronome/scheduler.js';
 import { int16ToFloat } from '../util/wav.js';
 import { computePeaks, drawWaveform } from './waveform.js';
 import { crop, applyGain, normalize, peakDb } from './edit-ops.js';
@@ -30,6 +31,8 @@ let player = null; // { src, startCtx, startSec }
 let raf = 0;
 let busyFlag = false;
 let onCloseCb = null;
+let grid = null; // { first, beat, perBar } in seconds of this audio, when the take has a tempo
+const SNAPS = { free: 'Free', beat: 'Beat', bar: 'Bar' };
 
 const dur = () => (rec ? rec.lengthSamples / rec.sampleRate : 0);
 const viewLen = () => dur() / zoom;
@@ -59,6 +62,7 @@ export async function openEditor(host, id, { onClose, title } = {}) {
   sel = hasLoop ? { a: rec.loopA, b: rec.loopB } : { a: 0, b: dur() };
   cursor = sel.a;
   $('.e-name', root).textContent = title ?? rec.name;
+  await loadGrid();
   addEventListener('resize', onResize);
   onResize();
   render();
@@ -107,6 +111,12 @@ function markup() {
         <button class="btn e-all">All</button>
         <button class="btn round e-play" aria-label="Play selection">${svg('M8 5l11 7-11 7z')}</button>
       </div>
+      <div class="row e-snap-row" hidden>
+        <span class="muted">Snap to</span>
+        <div class="segmented e-snap" role="radiogroup" aria-label="Snap selection to">
+          ${Object.entries(SNAPS).map(([k, l]) => `<button class="btn" data-snap="${k}" role="radio">${l}</button>`).join('')}
+        </div>
+      </div>
       <button class="btn primary wide e-crop">Crop to selection</button>
       <div class="row e-gain-row">
         <label class="gain">Gain <output class="e-gain-out">0 dB</output>
@@ -125,6 +135,15 @@ function bind() {
   $$('[data-zoom]', root).forEach((b) => b.addEventListener('click', () => setZoom(+b.dataset.zoom)));
   $('.e-all', root).addEventListener('click', () => { sel = { a: 0, b: dur() }; cursor = 0; render(); });
   $('.e-play', root).addEventListener('click', togglePlay);
+  $$('[data-snap]', root).forEach((b) => b.addEventListener('click', () => {
+    settings.set('editor.snap', b.dataset.snap);
+    const u = snapUnit();
+    if (u) {
+      const a = snap(sel.a);
+      sel = { a, b: Math.min(dur(), Math.max(snap(sel.b), a + u)) };
+    }
+    render();
+  }));
   $('.e-crop', root).addEventListener('click', () => {
     if (sel.a <= 0.0005 && sel.b >= dur() - 0.0005) { toast('Select the part to keep first.'); return; }
     edit('Crop', () => {
@@ -162,6 +181,34 @@ function bind() {
   o.addEventListener('pointerup', () => { o.onpointermove = null; });
 }
 
+// Bar and beat lines, from the take's tempo and first downbeat (an overdub
+// part: its take's, moved by where the part sits in it).
+
+async function loadGrid() {
+  grid = null;
+  let take = rec, shift = 0;
+  if (rec.partOf) {
+    take = await getRecording(rec.partOf);
+    const p = take?.parts?.find((q) => q.id === rec.id);
+    if (!p) return;
+    shift = p.offset;
+  }
+  if (!take?.tempo) return;
+  grid = { first: (take.firstBeatSec ?? 0) - shift, beat: 60 / take.tempo, perBar: TIME_SIGS[take.timeSig]?.beats ?? 4 };
+}
+
+const snapMode = () => (grid ? settings.get('editor.snap', 'free') : 'free');
+/** Seconds between snap lines, or 0 for free. */
+const snapUnit = () => ({ beat: 1, bar: grid?.perBar }[snapMode()] ?? 0) * (grid?.beat ?? 0);
+
+/** `t` on the nearest snap line (`how`: Math.round, or floor/ceil for the one before/after). */
+function snap(t, how = Math.round) {
+  const u = snapUnit();
+  if (!u) return t;
+  const v = grid.first + how((t - grid.first) / u) * u;
+  return Math.max(0, Math.min(dur(), v));
+}
+
 /** Move overdub part `part` by `d` seconds in its take. */
 async function movePart(part, d) {
   const take = await getRecording(part.partOf);
@@ -192,8 +239,10 @@ function shiftAfterCrop(r, start, newDur) {
   }
   if (r.firstBeatSec != null) {
     let fb = r.firstBeatSec - start;
-    if (fb < 0 && r.tempo) fb += Math.ceil(-fb / (60 / r.tempo)) * (60 / r.tempo);
-    if (fb >= 0 && fb <= newDur) out.firstBeatSec = fb;
+    // Cut into the bars: the next downbeat, so the bar lines stay put.
+    const bar = r.tempo ? (60 / r.tempo) * (TIME_SIGS[r.timeSig]?.beats ?? 4) : 0;
+    if (fb < 0 && bar) fb += Math.ceil(-fb / bar - 1e-9) * bar;
+    if (fb >= 0 && (fb <= newDur || bar)) out.firstBeatSec = Math.round(fb * 1e6) / 1e6;
     else delete out.firstBeatSec;
   }
   return out;
@@ -212,6 +261,7 @@ async function edit(label, op, after) {
     if (result.shift && rec.partOf) await movePart(rec, result.shift);
     before.shift = result.shift ?? 0;
     undo = before;
+    await loadGrid();
     peaksCache.clear();
     after?.();
     toast(`${label} applied.`);
@@ -233,6 +283,7 @@ async function doUndo() {
     pcm = undo.pcm;
     if (undo.shift && rec.partOf) await movePart(rec, -undo.shift);
     undo = null;
+    await loadGrid();
     peaksCache.clear();
     sel = { a: 0, b: dur() };
     viewStart = clampView(viewStart);
@@ -289,6 +340,11 @@ function render() {
     b.setAttribute('aria-checked', +b.dataset.zoom === zoom);
   });
   $('.e-overview', root).hidden = zoom === 1;
+  $('.e-snap-row', root).hidden = !grid;
+  $$('[data-snap]', root).forEach((b) => {
+    b.classList.toggle('selected', b.dataset.snap === snapMode());
+    b.setAttribute('aria-checked', b.dataset.snap === snapMode());
+  });
   $('.e-undo', root).disabled = !undo || busyFlag;
   $('.e-sel', root).textContent = `${fmt(sel.a)} – ${fmt(sel.b)}`;
   $('.e-len', root).textContent = `${fmt(sel.b - sel.a)} of ${fmt(dur())}`;
@@ -305,10 +361,29 @@ function draw(playhead = null) {
   const peaks = { min: all.min.subarray(off, off + width), max: all.max.subarray(off, off + width) };
   const f = (t) => (t - viewStart) / viewLen();
   drawWaveform(c, peaks, { a: f(sel.a), b: f(sel.b), loopOn: true, playhead: playhead ?? f(cursor), colors, labels: ['', ''] });
+  drawGrid(c);
   if (zoom > 1) {
     const o = $('.e-overview', root);
     drawWaveform(o, peaksFor(1), { a: viewStart / dur(), b: (viewStart + viewLen()) / dur(), loopOn: false, colors, labels: ['', ''] });
   }
+}
+
+/** Snap lines over the waveform: bars, and beats too when snapping to them, where there's room. */
+function drawGrid(c) {
+  const u = snapUnit();
+  if (!u) return;
+  const g = c.getContext('2d'), W = c.width, H = c.height, dpr = W / c.clientWidth || 1;
+  const pxPer = W / viewLen();
+  const bar = grid.beat * grid.perBar;
+  for (const [step, alpha] of [[bar, 0.45], ...(u < bar ? [[grid.beat, 0.18]] : [])]) {
+    if (step * pxPer < 6 * dpr) continue;
+    g.fillStyle = colors.playhead;
+    g.globalAlpha = alpha;
+    for (let t = grid.first + Math.ceil((viewStart - grid.first) / step) * step; t <= viewStart + viewLen(); t += step) {
+      g.fillRect(Math.round((t - viewStart) * pxPer), 0, Math.max(1, dpr), H);
+    }
+  }
+  g.globalAlpha = 1;
 }
 
 // Pointer: drag a selection edge, drag on empty space to select, tap to place the cursor.
@@ -329,9 +404,11 @@ function onPointerMove(e) {
   if (!drag) return;
   const t = xToTime(e.offsetX);
   if (drag.mode === 'pending' && Math.abs(e.offsetX - drag.x0) > DRAG_PX) drag = { mode: 'new', t0: xToTime(drag.x0) };
-  if (drag.mode === 'a') sel.a = Math.min(t, sel.b - MIN_SEL);
-  else if (drag.mode === 'b') sel.b = Math.max(t, sel.a + MIN_SEL);
-  else if (drag.mode === 'new') sel = { a: Math.min(drag.t0, t), b: Math.max(drag.t0, t) };
+  // Snapping: an edge stops at the last line before the other one; a new
+  // selection takes in the beats or bars it touches.
+  if (drag.mode === 'a') sel.a = Math.min(snap(t), snap(sel.b - MIN_SEL, Math.floor), sel.b - MIN_SEL);
+  else if (drag.mode === 'b') sel.b = Math.max(snap(t), snap(sel.a + MIN_SEL, Math.ceil), sel.a + MIN_SEL);
+  else if (drag.mode === 'new') sel = { a: snap(Math.min(drag.t0, t), Math.floor), b: snap(Math.max(drag.t0, t), Math.ceil) };
   else return;
   render();
 }

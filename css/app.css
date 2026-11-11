@@ -376,12 +376,12 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 /* Overdub parts */
 .p-parts { display: flex; flex-direction: column; gap: 6px; }
 .p-layer { display: flex; align-items: center; gap: 8px; font-size: 14px; }
-.p-layer > span { min-width: 56px; color: var(--muted); }
+.p-layer .p-track-name { min-width: 56px; max-width: 30%; padding: 6px 0; background: none; border: 0; color: var(--muted); font: inherit; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; }
 .p-layer input[type=range] { flex: 1; min-width: 0; }
 .p-layer .btn { padding: 0 10px; min-height: 36px; }
 .p-layer .btn.icon { width: 36px; height: 36px; padding: 0; }
 .p-layer svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
-.p-layer.aligning > span { color: var(--accent); font-weight: 600; }
+.p-layer.aligning .p-track-name { color: var(--accent); font-weight: 600; }
 .p-layer .p-align-btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .p-align { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 .p-align-info { display: flex; align-items: baseline; gap: 8px; }

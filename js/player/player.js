@@ -11,8 +11,8 @@
 import { getContext, holdAudio, releaseAudio } from '../audio/context.js';
 import { readLevel } from '../audio/input.js';
 import { loadPcm, getRecording, saveRecording, loadParts, mixFrom, mergeParts, deleteRecording, replacePcm } from '../storage/recordings.js';
-import { startRecording, stopRecording, isRecording } from '../recorder/recorder.js';
-import { metronome } from '../metronome/scheduler.js';
+import { startRecording, stopRecording, isRecording, stopTime } from '../recorder/recorder.js';
+import { metronome, TIME_SIGS } from '../metronome/scheduler.js';
 import { settings } from '../storage/db.js';
 import { int16ToFloat } from '../util/wav.js';
 import { encodeWav } from '../util/wav.js';
@@ -106,7 +106,7 @@ function ensureAudioGraph() {
     // A loop that runs to the end (or whose seam was missed, e.g. with the
     // screen off) restarts from here. Reaching the end paused the element,
     // which let go of the audio: take it back or it is suspended mid-loop.
-    if (overdub) stopOverdub();
+    if (overdub) stopOverdub(true);
     else if (loopActive()) { holdAudio('player'); audio.currentTime = loop.a; audio.play(); } else onPlayState();
   });
 }
@@ -175,7 +175,7 @@ const remixSoon = () => { clearTimeout(remixTimer); remixTimer = setTimeout(remi
 /** Close the player without leaving a trace (no callback). */
 export function closePlayer() {
   if (!rec && !root) return;
-  if (overdub) stopOverdub();
+  if (overdub) stopOverdub(true);
   clearTimeout(remixTimer);
   closeScore();
   flushSave();
@@ -355,7 +355,7 @@ function bind() {
     closePlayer();
     cb?.(id);
   });
-  $('.p-overdub', root).addEventListener('click', () => (overdub ? stopOverdub() : startOverdub()));
+  $('.p-overdub', root).addEventListener('click', () => (overdub ? stopOverdub(!!overdub.stopping) : startOverdub()));
   // The count-in, big over the waveform.
   offCountIn?.();
   offCountIn = metronome.onBeat((ev) => {
@@ -385,13 +385,21 @@ function bind() {
       // The editor works on that track's own audio (the original: the take
       // itself, its parts kept), then comes back to this take.
       const take = rec, cb = onEditCb;
-      const label = id === 'base' ? 'Original' : `Part ${rec.parts.findIndex((p) => p.id === id) + 2}`;
+      const label = layerName(id);
       flushSave();
       closePlayer();
       cb?.(id === 'base' ? take.id : id, { returnTo: take.id, title: `${take.name} · ${label}` });
     }
+    else if (e.target.closest('.p-track-name')) {
+      const name = prompt('Track name', layerName(id))?.trim().slice(0, 40);
+      if (name == null) return;
+      if (id === 'base') rec.baseName = name || undefined;
+      else rec.parts = rec.parts.map((p) => (p.id === id ? { ...p, name: name || undefined } : p));
+      flushSave();
+      renderControls();
+    }
     else if (e.target.closest('.p-del-part')) {
-      if (!confirm('Delete this part?')) return;
+      if (!confirm(`Delete “${layerName(id)}”?`)) return;
       if (align?.id === id) startAlign(null);
       rec.parts = rec.parts.filter((p) => p.id !== id);
       partAudio.delete(id);
@@ -432,7 +440,7 @@ const loopActive = () => loop.on && loop.a != null && loop.b != null;
 
 async function togglePlay() {
   if (!rec) return;
-  if (overdub) { stopOverdub(); return; }
+  if (overdub) { stopOverdub(!!overdub.stopping); return; }
   if (!audio.paused) { audio.pause(); return; }
   await holdAudio('player');
   if (loopActive() && (audio.currentTime < loop.a || audio.currentTime >= loop.b)) audio.currentTime = loop.a;
@@ -487,6 +495,14 @@ function renderControls() {
   onPlayState();
 }
 
+/** A track's name: given, else Original / Part n. */
+function layerName(id) {
+  if (id === 'base') return rec.baseName || 'Original';
+  const i = rec.parts.findIndex((p) => p.id === id);
+  return rec.parts[i]?.name || `Part ${i + 2}`;
+}
+const nameBtn = (id) => `<button class="p-track-name" aria-label="Rename ${escapeHtml(layerName(id))}">${escapeHtml(layerName(id))}</button>`;
+
 function renderParts() {
   const busy = !!overdub;
   $('.player', root).classList.toggle('overdubbing', busy);
@@ -499,23 +515,23 @@ function renderParts() {
   }
   const ob = $('.p-overdub', root);
   ob.classList.toggle('recording', busy);
-  ob.disabled = !!overdub?.stopping;
-  $('.p-overdub-label', root).textContent = busy ? 'Stop overdub' : loopActive() ? 'Overdub over loop' : 'Overdub';
+  ob.disabled = !!overdub?.stopping && !overdub.atBar;
+  $('.p-overdub-label', root).textContent = !busy ? (loopActive() ? 'Overdub over loop' : 'Overdub') : overdub.atBar ? 'Stop now' : 'Stop overdub';
   const parts = rec.parts ?? [];
   const layers = $('.p-layers', root);
-  const key = parts.map((p) => p.id).join() + (align?.id ?? '') + busy;
+  const key = JSON.stringify([parts.map((p) => [p.id, p.name]), rec.baseName, align?.id, busy]);
   if (layers.dataset.key !== key) {
     layers.dataset.key = key;
     const vol = (v, label) => `<input type="range" min="0" max="1.5" step="0.05" value="${v}" aria-label="${label} volume">`;
     layers.innerHTML = !parts.length ? '' : [
-      `<div class="p-layer" data-layer="base"><span>Original</span>${vol(rec.baseGain ?? 1, 'Original')}
+      `<div class="p-layer" data-layer="base">${nameBtn('base')}${vol(rec.baseGain ?? 1, escapeHtml(layerName('base')))}
         <button class="btn icon p-edit-part" aria-label="Edit the original (crop, gain)"${busy ? ' disabled' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM6 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7.5 7.5L20 18M7.5 16.5L20 6"/></svg></button></div>`,
       ...parts.map((p, i) => `
         <div class="p-layer${align?.id === p.id ? ' aligning' : ''}" data-layer="${p.id}">
-          <span>Part ${i + 2}</span>${vol(p.gain, `Part ${i + 2}`)}
+          ${nameBtn(p.id)}${vol(p.gain, escapeHtml(layerName(p.id)))}
           <button class="btn p-align-btn" aria-pressed="${align?.id === p.id}"${busy ? ' disabled' : ''}>Align</button>
-          <button class="btn icon p-edit-part" aria-label="Edit part ${i + 2} (crop, gain)"${busy ? ' disabled' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM6 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7.5 7.5L20 18M7.5 16.5L20 6"/></svg></button>
-          <button class="btn icon p-del-part" aria-label="Delete part ${i + 2}"${busy ? ' disabled' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+          <button class="btn icon p-edit-part" aria-label="Edit ${escapeHtml(layerName(p.id))} (crop, gain)"${busy ? ' disabled' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM6 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7.5 7.5L20 18M7.5 16.5L20 6"/></svg></button>
+          <button class="btn icon p-del-part" aria-label="Delete ${escapeHtml(layerName(p.id))}"${busy ? ' disabled' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
         </div>`),
     ].join('');
   }
@@ -576,7 +592,7 @@ async function startOverdub() {
   gain.gain.cancelScheduledValues(0);
   gain.gain.value = 1;
   src.connect(gain);
-  src.onended = () => { if (overdub?.src === src) stopOverdub(); };
+  src.onended = () => { if (overdub?.src === src && !overdub.stopping) stopOverdub(true); };
   src.start(when, from);
   Object.assign(overdub, { when, src });
 }
@@ -609,9 +625,18 @@ function endOverdub() {
   }
 }
 
-async function stopOverdub() {
+/**
+ * Stop overdubbing: with the clicks on, at the end of the bar (the take
+ * plays on to there); `now`, or asked again meanwhile, right away. Then the
+ * take plays on with the new part in.
+ */
+async function stopOverdub(now = false) {
   const od = overdub;
-  if (!od || od.stopping) return;
+  if (!od) return;
+  if (od.stopping) {
+    if (now && od.atBar) { od.atBar = false; stopRecording(); try { od.src?.stop(); } catch { /* not started */ } }
+    return;
+  }
   od.stopping = true;
   // performance.now() ↔ the audio clock as heard, for placing the part.
   const ctx = getContext();
@@ -619,9 +644,12 @@ async function stopOverdub() {
   const clock = ts?.performanceTime
     ? { ctx: ts.contextTime, perf: ts.performanceTime }
     : { ctx: ctx.currentTime - (ctx.outputLatency || 0), perf: performance.now() };
-  try { od.src?.stop(); } catch { /* not started */ }
+  const stopped = stopRecording({ atBarEnd: !now });
+  const end = stopTime();
+  od.atBar = end != null;
+  try { od.src?.stop(end ?? 0); } catch { /* not started */ }
   if (root) renderControls();
-  const { rec: part, firstAt, error } = await stopRecording();
+  const { rec: part, firstAt, error } = await stopped;
   endOverdub();
   if (error) toast(`Recording problem: ${error.message}`);
   if (!part) return;
@@ -640,7 +668,12 @@ async function stopOverdub() {
     toast(`New take: the loop ×${taken.passes} with your part. The original take is unchanged.`);
     if (root) {
       await openPlayer(root, taken.rec.id, { onClose: onCloseCb, onEdit: onEditCb });
+      if (!rec) return;
+      // Keep going: the whole new take, looped.
+      loop = { a: 0, b: duration, on: true };
+      changed();
       startAlign(part.id);
+      playOn(0);
     }
     return;
   }
@@ -653,6 +686,7 @@ async function stopOverdub() {
     if (!rec) return;
     remix();
     startAlign(part.id);
+    playOn(od.from);
     toast('Part added. Drag on the waveform to line it up, or use the 10 ms buttons.');
   } else {
     // The player was closed meanwhile: attach it to the stored take.
@@ -660,6 +694,13 @@ async function stopOverdub() {
     if (take) await saveRecording({ ...take, parts: [...(take.parts ?? []), entry] });
     else await deleteRecording(part.id).catch(() => {});
   }
+}
+
+/** Play on from `t` after an overdub, the new part in. */
+function playOn(t) {
+  if (!rec || !audio) return;
+  seek(t);
+  if (audio.paused) togglePlay();
 }
 
 /**
@@ -691,11 +732,14 @@ async function loopTake(takeId, part, start, [a, b]) {
     if (!x) continue;
     const r = { id: crypto.randomUUID(), name: 'part', createdAt: Date.now(), sampleRate: x.rate, lengthSamples: 0, status: 'done', partOf: id };
     await replacePcm(r, repeat(x.pcm, x.rate, p.offset));
-    parts.push({ id: r.id, offset: 0, gain: p.gain });
+    parts.push({ ...p, id: r.id, offset: 0 });
   }
   await saveRecording({ ...part, partOf: id });
   parts.push({ id: part.id, offset: Math.round(start * 1000) / 1000, gain: 1 });
   const { loopA, loopB, loopOn, scoreTrack, firstBeatSec, ...keep } = take;
+  // The bar lines carry over: the first downbeat in the loop.
+  const bar = take.tempo ? (60 / take.tempo) * (TIME_SIGS[take.timeSig]?.beats ?? 4) : 0;
+  if (bar && firstBeatSec != null) keep.firstBeatSec = Math.round((((firstBeatSec - a) % bar) + bar) % bar * 1000) / 1000;
   const rec = await replacePcm({
     ...keep,
     id,

@@ -14,6 +14,7 @@
 
 import { getRecording, replacePcm, loadPcm, loadParts } from '../storage/recordings.js';
 import { listScores } from '../scores/scores.js';
+import { TIME_SIGS } from '../metronome/scheduler.js';
 import { getContext } from '../audio/context.js';
 import { floatToInt16, encodeWav } from '../util/wav.js';
 import { encodeForSharing } from './export.js';
@@ -122,8 +123,13 @@ function readOldTag(u8) {
  */
 export async function tagFor(rec, section = null) {
   const meta = { v: 2, name: rec.name, speed: rec.speed ?? 1 };
-  if (rec.tempo) Object.assign(meta, { tempo: rec.tempo, timeSig: rec.timeSig });
   const off = section ? section[0] : 0;
+  if (rec.tempo) Object.assign(meta, { tempo: rec.tempo, timeSig: rec.timeSig });
+  if (rec.tempo && rec.firstBeatSec != null) {
+    // The bar lines: the first downbeat, from the start of what is shared.
+    const bar = (60 / rec.tempo) * (TIME_SIGS[rec.timeSig]?.beats ?? 4);
+    meta.firstBeatSec = Math.round(((((rec.firstBeatSec - off) % bar) + bar) % bar) * 1000) / 1000;
+  }
   if (section) Object.assign(meta, { loopA: 0, loopB: section[1] - section[0], loopOn: true });
   else if (rec.loopA != null && rec.loopB != null) Object.assign(meta, { loopA: rec.loopA, loopB: rec.loopB, loopOn: !!rec.loopOn });
   if (rec.scoreId && rec.scoreTrack?.length) {
@@ -142,11 +148,11 @@ export async function tagFor(rec, section = null) {
  * to `section` if given: { tracks (for the tag's JSON), files }.
  */
 export async function partFiles(rec, section = null, onProgress) {
-  const layers = [{ kind: 'base', pcm: await loadPcm(rec.id), rate: rec.sampleRate, offset: 0, gain: rec.baseGain ?? 1 }];
+  const layers = [{ kind: 'base', pcm: await loadPcm(rec.id), rate: rec.sampleRate, offset: 0, gain: rec.baseGain ?? 1, name: rec.baseName }];
   const audio = await loadParts(rec);
   for (const p of rec.parts ?? []) {
     const a = audio.get(p.id);
-    if (a) layers.push({ kind: 'part', pcm: a.pcm, rate: a.rate, offset: p.offset, gain: p.gain });
+    if (a) layers.push({ kind: 'part', pcm: a.pcm, rate: a.rate, offset: p.offset, gain: p.gain, name: p.name });
   }
   const tracks = [], files = [];
   for (const [k, l] of layers.entries()) {
@@ -161,7 +167,7 @@ export async function partFiles(rec, section = null, onProgress) {
     if (!pcm.length) continue;
     const r = await encodeForSharing(pcm, l.rate, { onProgress: (f) => onProgress?.((k + f) / layers.length) })
       .catch(() => ({ blob: new Blob([encodeWav(pcm, l.rate)], { type: 'audio/wav' }), ext: 'wav' }));
-    tracks.push({ kind: l.kind, offset: Math.round(offset * 1000) / 1000, gain: l.gain, file: files.length });
+    tracks.push({ kind: l.kind, offset: Math.round(offset * 1000) / 1000, gain: l.gain, file: files.length, ...(l.name ? { name: l.name } : {}) });
     files.push(r.blob);
   }
   return { tracks, files };
@@ -208,13 +214,15 @@ export async function importAudio(file) {
   let duration = pcm.length / rate;
   if (baseTrack) {
     rec.baseGain = Number.isFinite(baseTrack.gain) ? baseTrack.gain : 1;
+    const name = (t) => (typeof t.name === 'string' && t.name.trim() ? { name: t.name.trim().slice(0, 40) } : {});
+    if (name(baseTrack).name) rec.baseName = name(baseTrack).name;
     rec.parts = [];
     for (const t of tracks.filter((x) => x.kind === 'part')) {
       const part = await decode(await tag.files[t.file].bytes(), `${file.name} (part)`);
       const p = { id: crypto.randomUUID(), name: 'part', createdAt: rec.createdAt, sampleRate: part.rate, lengthSamples: part.pcm.length, status: 'done', partOf: rec.id };
       await replacePcm(p, part.pcm);
       const offset = Number.isFinite(t.offset) ? t.offset : 0;
-      rec.parts.push({ id: p.id, offset, gain: Number.isFinite(t.gain) ? t.gain : 1 });
+      rec.parts.push({ id: p.id, offset, gain: Number.isFinite(t.gain) ? t.gain : 1, ...name(t) });
       duration = Math.max(duration, offset + part.pcm.length / part.rate);
     }
   }
@@ -224,6 +232,7 @@ export async function importAudio(file) {
     if (a != null && b != null && b > a) Object.assign(rec, { loopA: a, loopB: b, loopOn: !!meta.loopOn });
     if (Number.isFinite(meta.speed)) rec.speed = Math.max(0.5, Math.min(1, meta.speed)); // the player's range
     if (Number.isFinite(meta.tempo)) Object.assign(rec, { tempo: meta.tempo, timeSig: String(meta.timeSig || '4/4') });
+    if (rec.tempo && Number.isFinite(meta.firstBeatSec) && meta.firstBeatSec >= 0) rec.firstBeatSec = meta.firstBeatSec;
     // Link the same score if it's here too: the same PDF, else the same title.
     if (Array.isArray(meta.scoreTrack) && meta.scoreTrack.length) {
       const scores = await listScores();

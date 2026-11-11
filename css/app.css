@@ -389,6 +389,8 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 .p-align-btns { display: flex; gap: 6px; }
 .p-align-text { color: var(--accent); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .p-align .btn { flex: 1; padding: 0 6px; min-height: 40px; white-space: nowrap; }
+.p-align .p-align-info .p-align-default { flex: none; margin-left: auto; min-height: 32px; padding: 0 10px; font-size: 13px; }
+.p-align-info .p-align-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .p-overdub .rec-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; background: var(--bad, #e5484d); }
 .p-overdub.recording { border-color: var(--bad, #e5484d); color: var(--bad, #e5484d); }
 .p-overdub.recording .rec-dot { border-radius: 2px; }

@@ -313,7 +313,7 @@ function markup() {
       <div class="p-parts">
         <div class="p-layers"></div>
         <div class="p-align" hidden>
-          <div class="p-align-info"><span class="p-align-text"></span><span class="p-align-hint muted">Zoomed to ${ZOOM_SEC} s · drag to move</span></div>
+          <div class="p-align-info"><span class="p-align-text"></span><span class="p-align-hint muted">Zoomed to ${ZOOM_SEC} s · drag to move</span><button class="btn p-align-default" aria-label="Use this part's correction for new parts">Use for new parts</button></div>
           <div class="p-align-btns">
             <button class="btn p-nudge" data-d="-1" aria-label="10 ms earlier">◀ 10 ms</button>
             <button class="btn p-nudge" data-d="1" aria-label="10 ms later">10 ms ▶</button>
@@ -412,6 +412,14 @@ function bind() {
   });
   $('.p-align', root).addEventListener('click', (e) => {
     if (e.target.closest('.p-align-done')) { startAlign(null); return; }
+    if (e.target.closest('.p-align-default')) {
+      const p = rec.parts?.find((q) => q.id === align?.id);
+      if (p?.placed == null) return;
+      const ms = Math.max(0, Math.min(500, Math.round((p.placed - p.offset) * 1000)));
+      settings.set('overdub.delayMs', ms);
+      toast(`New parts will be moved ${ms} ms earlier (Settings › Overdub).`);
+      return;
+    }
     const n = e.target.closest('.p-nudge');
     if (n && align) movePart(align.id, +n.dataset.d * NUDGE_SEC, true);
   });
@@ -550,6 +558,7 @@ function renderParts() {
   if (align) {
     const p = parts.find((q) => q.id === align.id);
     $('.p-align-text', root).textContent = p ? `Starts at ${p.offset < 0 ? '−' : ''}${Math.abs(p.offset).toFixed(3)} s` : '';
+    $('.p-align-default', root).hidden = p?.placed == null;
   }
 }
 
@@ -672,9 +681,11 @@ async function stopOverdub(now = false) {
   // The part's first sample goes where the take was (as heard) at that
   // moment. Mic and Bluetooth delays aren't known: line up by hand from here.
   const heard = clock.ctx + (firstAt - clock.perf) / 1000;
+  // The configured delay correction (Settings), then line up by hand if needed.
+  const delay = settings.get('overdub.delayMs', 0) / 1000;
   if (od.loop) {
     // Seconds into the first pass of the loop, which starts the new take.
-    const taken = await loopTake(od.recId, part, heard - od.when, od.loop);
+    const taken = await loopTake(od.recId, part, heard - od.when, od.loop, delay);
     if (!taken) return;
     toast(`New take: the loop ×${taken.passes} with your part. The original take is unchanged.`);
     if (root) {
@@ -688,8 +699,8 @@ async function stopOverdub(now = false) {
     }
     return;
   }
-  const offset = Math.round((od.from + heard - od.when) * 1000) / 1000;
-  const entry = { id: part.id, offset, gain: 1 };
+  const placed = Math.round((od.from + heard - od.when) * 1000) / 1000;
+  const entry = { id: part.id, offset: Math.round((placed - delay) * 1000) / 1000, placed, gain: 1 };
   if (rec?.id === od.recId) {
     rec.parts = [...(rec.parts ?? []), entry];
     flushSave();
@@ -720,7 +731,8 @@ function playOn(t) {
  * repeated as its own track, and the new part (starting `start` seconds into
  * the first pass) on top. Resolves to { rec, passes }, or null.
  */
-async function loopTake(takeId, part, start, [a, b]) {
+async function loopTake(takeId, part, placed, [a, b], delay = 0) {
+  const start = placed - delay;
   const take = await getRecording(takeId);
   if (!take) { await deleteRecording(part.id).catch(() => {}); return null; }
   const len = b - a;
@@ -746,7 +758,7 @@ async function loopTake(takeId, part, start, [a, b]) {
     parts.push({ ...p, id: r.id, offset: 0 });
   }
   await saveRecording({ ...part, partOf: id });
-  parts.push({ id: part.id, offset: Math.round(start * 1000) / 1000, gain: 1 });
+  parts.push({ id: part.id, offset: Math.round(start * 1000) / 1000, placed: Math.round(placed * 1000) / 1000, gain: 1 });
   const { loopA, loopB, loopOn, scoreTrack, firstBeatSec, ...keep } = take;
   // The bar lines carry over: the first downbeat in the loop.
   const bar = take.tempo ? (60 / take.tempo) * (TIME_SIGS[take.timeSig]?.beats ?? 4) : 0;

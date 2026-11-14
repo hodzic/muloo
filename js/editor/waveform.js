@@ -30,18 +30,21 @@ export function computePeaks(pcm, columns, start = 0, end = pcm.length) {
  * Draw peaks plus an optional loop region and playhead.
  * Times are fractions of the visible span (0..1); null hides an element.
  */
-export function drawWaveform(canvas, peaks, { a = null, b = null, loopOn = false, playhead = null, colors, labels = ['A', 'B'], overlay = null }) {
+export function drawWaveform(canvas, peaks, { a = null, b = null, loopOn = false, playhead = null, colors, labels = ['A', 'B'], overlay = null, gain = 1 }) {
   const g = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height, mid = H / 2;
   const dpr = W / canvas.clientWidth || 1;
   g.clearRect(0, 0, W, H);
 
-  g.fillStyle = colors.wave;
+  // `gain` previews a level change: columns that would clip are drawn in colors.clip.
   const n = peaks.min.length;
   const colW = W / n;
   for (let c = 0; c < n; c++) {
-    const y0 = mid - peaks.max[c] * mid * 0.95;
-    const y1 = mid - peaks.min[c] * mid * 0.95;
+    const hi = peaks.max[c] * gain, lo = peaks.min[c] * gain;
+    const clips = gain !== 1 && (hi >= 1 || lo <= -1);
+    g.fillStyle = clips && colors.clip ? colors.clip : colors.wave;
+    const y0 = mid - Math.min(1, hi) * mid * 0.95;
+    const y1 = mid - Math.max(-1, lo) * mid * 0.95;
     g.fillRect(c * colW, y0, Math.max(1, colW), Math.max(1, y1 - y0));
   }
 

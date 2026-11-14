@@ -152,6 +152,7 @@ input[type="range"] {
 
 .muted { color: var(--muted); }
 .warn { color: var(--warn); }
+.bad { color: var(--bad); }
 
 /* Toast */
 .toast {
@@ -458,7 +459,7 @@ button.player-title { flex: 1; appearance: none; border: 0; background: none; co
 .e-zoom { flex: 1; }
 .e-undo { flex: none; }
 .e-play.selected { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
-.e-play svg { width: 22px; height: 22px; fill: currentColor; }
+.e-play svg { width: 22px; height: 22px; fill: currentColor; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
 .e-gain-row .gain { flex: 1; }
 .busy { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgb(0 0 0 / 0.55); font-weight: 700; border-radius: var(--radius); z-index: 2; }
 

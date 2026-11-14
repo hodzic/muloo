@@ -156,6 +156,7 @@ function bind() {
   gain.addEventListener('input', () => {
     $('.e-gain-out', root).textContent = `${gain.value > 0 ? '+' : ''}${(+gain.value).toFixed(1)} dB`;
     $('.e-gain-apply', root).disabled = +gain.value === 0;
+    render();
   });
   $('.e-gain-apply', root).addEventListener('click', () => {
     const db = +gain.value;
@@ -324,7 +325,7 @@ function onResize() {
   peaksCache.clear();
   const s = getComputedStyle(document.documentElement);
   const v = (n) => s.getPropertyValue(n).trim();
-  colors = { wave: v('--muted'), loop: 'rgb(255 159 28 / 0.3)', loopOff: 'rgb(255 255 255 / 0.1)', handle: v('--accent'), labelText: v('--accent-text'), playhead: v('--text') };
+  colors = { wave: v('--muted'), loop: 'rgb(255 159 28 / 0.3)', loopOff: 'rgb(255 255 255 / 0.1)', handle: v('--accent'), labelText: v('--accent-text'), playhead: v('--text'), clip: v('--bad') };
   render();
 }
 
@@ -351,9 +352,18 @@ function render() {
   $('.e-sel', root).textContent = `${fmt(sel.a)} – ${fmt(sel.b)}`;
   $('.e-len', root).textContent = `${fmt(sel.b - sel.a)} of ${fmt(dur())}`;
   const p = peakDb(pcm);
-  $('.e-meta', root).textContent = `Peak ${Number.isFinite(p) ? `${p.toFixed(1)} dBFS` : 'silent'}`;
+  const db = previewDb();
+  const meta = $('.e-meta', root);
+  const after = p + db;
+  meta.textContent = !Number.isFinite(p) ? 'Peak silent'
+    : db ? `Peak ${p.toFixed(1)} → ${after > 0 ? '+' : ''}${after.toFixed(1)} dBFS${after >= 0 ? ' · clips' : ''}`
+    : `Peak ${p.toFixed(1)} dBFS`;
+  meta.classList.toggle('bad', Number.isFinite(p) && db !== 0 && after >= 0);
   draw();
 }
+
+/** The gain slider's value in dB, previewed on the waveform until applied. */
+const previewDb = () => +($('.e-gain', root)?.value ?? 0);
 
 function draw(playhead = null) {
   const c = $('.e-wave', root);
@@ -362,11 +372,12 @@ function draw(playhead = null) {
   const off = Math.round((viewStart / dur()) * all.min.length);
   const peaks = { min: all.min.subarray(off, off + width), max: all.max.subarray(off, off + width) };
   const f = (t) => (t - viewStart) / viewLen();
-  drawWaveform(c, peaks, { a: f(sel.a), b: f(sel.b), loopOn: true, playhead: playhead ?? f(cursor), colors, labels: ['', ''] });
+  const gain = 10 ** (previewDb() / 20);
+  drawWaveform(c, peaks, { a: f(sel.a), b: f(sel.b), loopOn: true, playhead: playhead ?? f(cursor), colors, labels: ['', ''], gain });
   if (snapUnit()) drawBars(c, { t0: viewStart, t1: viewStart + viewLen(), grid, beats: snapMode() === 'beat', color: colors.playhead, numbers: true });
   if (zoom > 1) {
     const o = $('.e-overview', root);
-    drawWaveform(o, peaksFor(1), { a: viewStart / dur(), b: (viewStart + viewLen()) / dur(), loopOn: false, colors, labels: ['', ''] });
+    drawWaveform(o, peaksFor(1), { a: viewStart / dur(), b: (viewStart + viewLen()) / dur(), loopOn: false, colors, labels: ['', ''], gain });
   }
 }
 
@@ -410,7 +421,12 @@ function onPointerUp(e) {
 // Playback of the selection (from the cursor if it is inside it), sample-accurate.
 
 async function togglePlay() {
-  if (player) { stopPlayback(); return; }
+  if (player) {
+    // Pause: the cursor moves to where playback stopped, so Play carries on from there.
+    cursor = Math.min(sel.b, player.startSec + (getContext().currentTime - player.startCtx));
+    stopPlayback();
+    return;
+  }
   const ctx = await holdAudio('editor');
   const from = cursor > sel.a && cursor < sel.b ? cursor : sel.a;
   const sr = rec.sampleRate;
@@ -424,7 +440,16 @@ async function togglePlay() {
   src.onended = () => { if (player?.src === src) stopPlayback(); };
   src.start();
   player = { src, startCtx: ctx.currentTime, startSec: from };
-  $('.e-play', root).classList.add('selected');
+  setPlayIcon(true);
+}
+
+const PLAY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg>';
+const PAUSE_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg>';
+
+function setPlayIcon(playing) {
+  const b = $('.e-play', root);
+  b.innerHTML = playing ? PAUSE_ICON : PLAY_ICON;
+  b.setAttribute('aria-label', playing ? 'Pause' : 'Play selection');
 }
 
 function stopPlayback() {
@@ -434,7 +459,7 @@ function stopPlayback() {
   try { p.src.stop(); } catch { /* already ended */ }
   releaseAudio('editor');
   if (root) {
-    $('.e-play', root).classList.remove('selected');
+    setPlayIcon(false);
     draw();
   }
 }

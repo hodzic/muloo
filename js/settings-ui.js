@@ -4,7 +4,7 @@ import { listInputs, setInputDevice, setInputGainDb, looksBluetooth, getInput, o
 import { settings } from './storage/db.js';
 import { $, escapeHtml, formatBytes } from './util/dom.js';
 
-export const APP_VERSION = '2026-11-13a';
+export const APP_VERSION = '2026-11-16a';
 
 const METER_FLOOR_DB = -60;
 const CLIP_HOLD_MS = 2000;
@@ -35,6 +35,7 @@ export function initSettings(button, dlg) {
           <div class="meter-clip">CLIP</div>
         </div>
       </div>
+      <p class="muted level-device" hidden></p>
       <p class="warn mic-error" hidden></p>
       <h3>Overdub</h3>
       <label>Delay correction <output class="od-delay-out"></output>
@@ -96,6 +97,15 @@ async function renderDevices() {
   sel.value = devices.some((d) => d.deviceId === chosen) ? chosen : '';
   const label = getInput()?.label ?? devices.find((d) => d.deviceId === chosen)?.label ?? '';
   $('.bt-warning', dialog).hidden = !looksBluetooth(label);
+  renderLevelDevice();
+}
+
+// Which mic the level check is reading, so "Automatic" isn't a guess.
+function renderLevelDevice() {
+  const el = $('.level-device', dialog);
+  const input = checking ? getInput() : null;
+  el.hidden = !input;
+  el.textContent = input ? `Listening on: ${input.label || 'unnamed microphone'}` : '';
 }
 
 // The mic stays off until asked: opening it interrupts other apps' playback on Android.
@@ -106,6 +116,7 @@ async function startCheck() {
   try {
     await acquireInput('settings');
     if (!checking) releaseInput('settings');
+    renderLevelDevice();
   } catch (e) {
     checking = false;
     renderCheck();
@@ -129,6 +140,7 @@ function renderCheck() {
   b.classList.toggle('selected', checking);
   b.setAttribute('aria-pressed', checking);
   b.textContent = checking ? 'Mic on ■' : 'Check level';
+  renderLevelDevice();
   cancelAnimationFrame(raf);
   if (checking) raf = requestAnimationFrame(meterLoop);
   else {

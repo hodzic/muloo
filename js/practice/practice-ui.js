@@ -38,8 +38,7 @@ export function mount(el) {
         <div class="count-in-overlay" hidden></div>
         <div class="stage-timer">00:00</div>
         <div class="meter" aria-hidden="true">
-          <div class="meter-fill"></div>
-          <div class="meter-peak"></div>
+          <div class="meter-track"><div class="meter-fill"></div><div class="meter-peak"></div></div>
           <div class="meter-clip">CLIP</div>
         </div>
         <div class="mic-message" hidden></div>
@@ -196,7 +195,7 @@ function loop(now) {
   const input = getInput();
   $('.meter', root).classList.toggle('off', !input);
   if (!input) {
-    $('.meter-fill', root).style.width = '0%';
+    $('.meter-fill', root).style.clipPath = '';
     $('.meter-peak', root).style.left = '0%';
     return;
   }
@@ -207,7 +206,7 @@ function loop(now) {
     peakHoldAt = now;
   }
   if (clipped) clipAt = now;
-  $('.meter-fill', root).style.width = `${pct(peakDb)}%`;
+  $('.meter-fill', root).style.clipPath = `inset(0 ${(100 - pct(peakDb)).toFixed(1)}% 0 0)`;
   $('.meter-peak', root).style.left = `${pct(peakHold)}%`;
   $('.meter', root).classList.toggle('clipping', now - clipAt < CLIP_HOLD_MS);
 }

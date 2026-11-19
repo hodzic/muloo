@@ -4,7 +4,7 @@ import { listInputs, setInputDevice, setInputGainDb, looksBluetooth, getInput, o
 import { settings } from './storage/db.js';
 import { $, escapeHtml, formatBytes } from './util/dom.js';
 
-export const APP_VERSION = '2026-11-16a';
+export const APP_VERSION = '2026-11-18a';
 
 const METER_FLOOR_DB = -60;
 const CLIP_HOLD_MS = 2000;
@@ -31,7 +31,7 @@ export function initSettings(button, dlg) {
       <div class="level-row">
         <button class="btn level-check" type="button" aria-pressed="false">Check level</button>
         <div class="meter off" aria-hidden="true">
-          <div class="meter-fill"></div>
+          <div class="meter-track"><div class="meter-fill"></div></div>
           <div class="meter-clip">CLIP</div>
         </div>
       </div>
@@ -145,7 +145,7 @@ function renderCheck() {
   if (checking) raf = requestAnimationFrame(meterLoop);
   else {
     $('.meter', dialog).classList.add('off');
-    $('.meter-fill', dialog).style.width = '0%';
+    $('.meter-fill', dialog).style.clipPath = '';
   }
 }
 
@@ -159,7 +159,7 @@ function meterLoop(now) {
   const { peakDb, clipped } = readLevel(input, levelBuf);
   if (clipped) clipAt = now;
   const pct = Math.max(0, Math.min(100, ((peakDb - METER_FLOOR_DB) / -METER_FLOOR_DB) * 100));
-  $('.meter-fill', dialog).style.width = `${pct}%`;
+  $('.meter-fill', dialog).style.clipPath = `inset(0 ${(100 - pct).toFixed(1)}% 0 0)`;
   meter.classList.toggle('clipping', now - clipAt < CLIP_HOLD_MS);
 }
 

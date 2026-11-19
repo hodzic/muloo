@@ -323,10 +323,12 @@ dialog::backdrop { background: rgb(0 0 0 / 0.6); }
 @keyframes blink { to { visibility: hidden; } }
 .count-in-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 140px; font-weight: 800; color: var(--warn); background: color-mix(in srgb, var(--surface) 85%, transparent); border-radius: 20px; z-index: 1; }
 .stage-timer.near-limit { color: var(--warn); }
-.meter { position: relative; width: 100%; max-width: 420px; height: 28px; border-radius: 6px; background: var(--surface-2); overflow: hidden; }
-.meter-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--good) 0 70%, var(--warn) 70% 90%, var(--bad) 90%); background-size: 420px 100%; }
+.meter { display: flex; width: 100%; max-width: 420px; height: 28px; border-radius: 6px; background: var(--surface-2); overflow: hidden; }
+/* The gradient spans the whole track; the level reveals it, so yellow and red show at any meter width. */
+.meter-track { position: relative; flex: 1; overflow: hidden; }
+.meter-fill { position: absolute; inset: 0; background: linear-gradient(90deg, var(--good) 0 70%, var(--warn) 70% 90%, var(--bad) 90%); clip-path: inset(0 100% 0 0); }
 .meter-peak { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--text); left: 0; }
-.meter-clip { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; padding: 0 8px; font-size: 12px; font-weight: 800; color: var(--muted); background: var(--surface-2); }
+.meter-clip { display: flex; align-items: center; padding: 0 8px; font-size: 12px; font-weight: 800; color: var(--muted); background: var(--surface-2); }
 .meter.clipping .meter-clip { background: var(--bad); color: #fff; }
 .stage .mic-message { background: var(--surface-2); }
 .gain { flex: 1; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); }

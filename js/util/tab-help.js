@@ -62,6 +62,7 @@ const HELP = {
     <ul>
       <li>Choose the count-in, then Record. The metronome starts with the recording and the take opens in Recordings when you stop. Takes stop by themselves after 15 minutes.</li>
       <li>With the metronome already clicking, the count-in starts at the next bar line, in time with it, and Stop lets the take run on to the end of the bar, so it ends on the bar line (tap Stop now to cut it there and then).</li>
+      <li>When Stop ends the take right away, its last 0.3 s is dropped, so the knock of your tap isn't in it.</li>
       <li>A take recorded with a score remembers where you were, so the score can scroll along on playback.</li>
     </ul>`,
 

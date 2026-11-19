@@ -12,13 +12,16 @@ import { acquireInput, releaseInput, connectInput, disconnectInput, onInputData 
 import { createCaptureNode } from '../audio/capture.js';
 import { metronome } from '../metronome/scheduler.js';
 import { floatToInt16 } from '../util/wav.js';
-import { saveRecording, putChunk, deleteRecording } from '../storage/recordings.js';
+import { saveRecording, putChunk, deleteChunk, deleteRecording } from '../storage/recordings.js';
 import { holdWakeLock, releaseWakeLock } from '../util/wakelock.js';
 
 export const MAX_SECONDS = 15 * 60;
 // A take starts this long before the first beat after the count-in, so a
 // note played a little early isn't clipped.
 const LEAD_IN_SEC = 0.2;
+// Tapping Stop knocks the phone, and the mic hears it just before the stop:
+// takes stopped by a tap lose this much of their end.
+export const TAP_TRIM_SEC = 0.3;
 
 let session = null;
 const listeners = new Set();
@@ -109,6 +112,8 @@ export async function startRecording({ countInBars = 0, startMetronome = null, s
       closing: false, // finalizing: no more samples except the worklet's last
       endTime: null, // stopping at a bar line: its AudioContext time
       maxSamples: null,
+      keepSamples: null, // stopped by a tap: samples to keep (the rest is the tap)
+      lastChunk: null, // the last chunk handed to writeChunk
       reachedEnd: null,
       onStopped: null,
     };
@@ -214,8 +219,8 @@ function append(s, f32) {
   if (s.samples >= MAX_SECONDS * s.rec.sampleRate) stopRecording();
 }
 
-function writeChunk(s, data) {
-  const index = s.chunkIndex++;
+function writeChunk(s, data, index = s.chunkIndex++) {
+  s.lastChunk = data;
   s.writes = s.writes.then(async () => {
     if (s.error) return;
     try {
@@ -226,6 +231,24 @@ function writeChunk(s, data) {
       stopRecording();
     }
   });
+}
+
+/**
+ * Finish the take at `keep` samples instead of writing the rest. The cut is
+ * less than a chunk back, so at most the last stored chunk is rewritten.
+ */
+function dropTail(s, keep) {
+  const stored = s.samples - s.accN; // in chunks already handed to writeChunk
+  if (keep >= stored) {
+    if (keep > stored) writeChunk(s, s.acc.slice(0, keep - stored));
+    return;
+  }
+  const last = s.lastChunk;
+  const index = s.chunkIndex - 1;
+  const n = keep - (stored - last.length);
+  s.writes = s.writes.then(() => { if (!s.error) s.writtenSamples -= last.length; });
+  if (n > 0) writeChunk(s, last.slice(0, n), index);
+  else s.writes = s.writes.then(() => deleteChunk(s.rec.id, index).catch(() => {}));
 }
 
 /** Note that bar `measureIndex` of the linked score starts at AudioContext time `time`. */
@@ -252,15 +275,23 @@ function barEnd(s) {
  * was saved). firstAt: performance.now() time of the first sample.
  * `atBarEnd`: with the metronome clicking, record on to the end of the bar
  * (cut exactly there). Calling again meanwhile stops right away.
+ * `tapped`: stopped by a tap on the screen; when it stops right away, the
+ * last TAP_TRIM_SEC (the tap itself) is left out.
  */
-export function stopRecording({ atBarEnd = false } = {}) {
+export function stopRecording({ atBarEnd = false, tapped = false } = {}) {
   const s = session;
   if (!s) return Promise.resolve({ rec: null, error: null });
-  if (s.stopping) { s.reachedEnd?.(); return s.stopping; }
+  if (s.stopping) {
+    if (tapped && s.reachedEnd) s.keepSamples = Math.max(0, s.samples - Math.round(TAP_TRIM_SEC * s.rec.sampleRate));
+    s.reachedEnd?.();
+    return s.stopping;
+  }
   const end = atBarEnd ? barEnd(s) : null;
   if (end != null) {
     s.endTime = end;
     s.maxSamples = Math.max(s.samples, Math.round((end - s.startTime) * s.rec.sampleRate));
+  } else if (tapped) {
+    s.keepSamples = Math.max(0, s.samples - Math.round(TAP_TRIM_SEC * s.rec.sampleRate));
   }
   s.stopping = (async () => {
     if (end != null) {
@@ -284,7 +315,8 @@ export function stopRecording({ atBarEnd = false } = {}) {
     } else {
       s.unsubscribe();
     }
-    if (s.accN) writeChunk(s, s.acc.slice(0, s.accN));
+    if (s.keepSamples != null && s.keepSamples < s.samples) dropTail(s, s.keepSamples);
+    else if (s.accN) writeChunk(s, s.acc.slice(0, s.accN));
     await s.writes;
     if (s.ownsMetronome) metronome.stop();
     releaseInput('recorder');

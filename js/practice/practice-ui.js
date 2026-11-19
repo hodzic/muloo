@@ -135,13 +135,13 @@ function renderInput(input) {
 
 async function toggleRecording() {
   // Running on to the bar line: a second tap stops right away.
-  if (isStopping()) { stopRecording(); return; }
+  if (isStopping()) { stopRecording({ tapped: true }); return; }
   if (busy) return;
   busy = true;
   try {
     if (isRecording()) {
       // With the clicks on, the take ends at the end of the bar.
-      const { rec, error } = await stopRecording({ atBarEnd: true });
+      const { rec, error } = await stopRecording({ atBarEnd: true, tapped: true });
       reportError(error);
       if (rec) navigate('recordings', { recordingId: rec.id, open: true });
     } else {

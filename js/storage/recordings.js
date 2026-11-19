@@ -23,6 +23,7 @@ export async function deleteRecording(id) {
 }
 
 export const putChunk = (recordingId, index, data) => put('pcmChunks', { recordingId, index, data });
+export const deleteChunk = (recordingId, index) => del('pcmChunks', [recordingId, index]);
 
 export async function loadChunks(id) {
   return (await getAll('pcmChunks', chunkRange(id))).map((c) => c.data);

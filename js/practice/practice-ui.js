@@ -65,14 +65,24 @@ export function mount(el) {
   metronome.onChange(() => {
     if (metronome.running && !practiceStart) practiceStart = performance.now();
     else if (!metronome.running) practiceStart = 0;
+    if (!metronome.running) hideCountIn();
   });
+  let countInTimer = 0;
+  const hideCountIn = () => {
+    clearTimeout(countInTimer);
+    $('.count-in-overlay', root).hidden = true;
+  };
   metronome.onBeat((ev) => {
     const c = $('.count-in-overlay', root);
     if (ev.countIn && ev.sub === 0) {
+      clearTimeout(countInTimer);
       c.textContent = ev.beat + 1;
       c.hidden = false;
+      // With the metronome off, no beat follows the count-in to clear it:
+      // hide it on the downbeat after the last count.
+      if (ev.bar === -1 && ev.beat === ev.beatsPerBar - 1) countInTimer = setTimeout(hideCountIn, 60000 / ev.bpm);
     } else if (!ev.countIn) {
-      c.hidden = true;
+      hideCountIn();
     }
   });
   onRecorderChange(renderRecording);

@@ -117,7 +117,7 @@ const HELP = {
       <li>Pick a tool under the waveform (Crop, Gain, Normalize or Hiss); the panel says what it will do and the orange button applies it.</li>
       <li>Crop keeps only the selection. Gain changes the level of the whole track, previewed on the waveform. Normalize brings the loudest point up to just below clipping.</li>
       <li>Hiss turns down steady background noise (hiss, hum) while leaving the playing alone. It learns the noise from the selection, so select a stretch with only hiss in it (e.g. the quiet at the end); with All it uses the quietest half second. Light, Medium and Strong cut it by 6, 10 and 15 dB; Strong can sound watery. Reduce hiss before you normalize.</li>
-      <li>Edits are saved straight away. Undo takes back the last one.</li>
+      <li>Each edit is saved straight away and listed under Edits this session; Play plays the result (with a gain still on the slider too). × on any edit takes just that one out and the others are done again on the original; Undo takes out the last. The list is cleared when you leave the editor; the edits stay.</li>
     </ul>`,
 };
 

@@ -1,6 +1,8 @@
 // Editor (DESIGN.md §5.7): waveform with 1×/4×/16× zoom, selection, and the
-// tools crop, gain, normalize and reduce hiss with one level of undo. Each edit is saved immediately;
-// undo restores the previous audio until the next edit or leaving.
+// tools crop, gain, normalize and reduce hiss. The session's edits are kept as
+// a list of steps applied in order to the audio as it was opened; the result
+// is saved after every change. Any step can be removed (the rest are applied
+// again) until the editor is left.
 
 import { getContext, holdAudio, releaseAudio } from '../audio/context.js';
 import { getRecording, saveRecording, loadPcm, replacePcm } from '../storage/recordings.js';
@@ -20,7 +22,9 @@ const MIN_SEL = 0.05;
 let root = null;
 let rec = null;
 let pcm = null;
-let undo = null; // { rec, pcm }
+let base = null;   // { rec, pcm } as opened
+let steps = [];    // the session's edits, in order: { kind, ...params }
+let states = [];   // states[i]: { rec, pcm } after the first i steps; null = dropped to save memory
 let zoom = 1;
 let viewStart = 0; // seconds
 let sel = { a: 0, b: 0 };
@@ -58,7 +62,9 @@ export async function openEditor(host, id, { onClose, title } = {}) {
     close();
     return;
   }
-  undo = null;
+  base = { rec, pcm };
+  steps = [];
+  states = [base];
   zoom = 1;
   viewStart = 0;
   const hasLoop = rec.loopA != null && rec.loopB != null && rec.loopB > rec.loopA;
@@ -79,7 +85,9 @@ function close() {
   const cb = onCloseCb;
   const saved = rec;
   root.innerHTML = '';
-  root = rec = pcm = undo = null;
+  root = rec = pcm = base = null;
+  steps = [];
+  states = [];
   peaksCache.clear();
   cb?.(saved);
 }
@@ -139,13 +147,21 @@ function markup() {
           <button class="btn primary wide e-apply"></button>
         </div>
       </div>
+      <div class="e-history" hidden>
+        <div class="e-history-head"><span>Edits this session</span><span class="muted">× removes one</span></div>
+        <ol class="e-steps"></ol>
+      </div>
       <div class="busy" hidden>Saving…</div>
     </div>`;
 }
 
 function bind() {
   $('.e-back', root).addEventListener('click', () => { if (!busyFlag) close(); });
-  $('.e-undo', root).addEventListener('click', doUndo);
+  $('.e-undo', root).addEventListener('click', () => { if (steps.length) removeStep(steps.length - 1); });
+  $('.e-steps', root).addEventListener('click', (e) => {
+    const b = e.target.closest('[data-step]');
+    if (b) removeStep(+b.dataset.step);
+  });
   $$('[data-zoom]', root).forEach((b) => b.addEventListener('click', () => setZoom(+b.dataset.zoom)));
   $('.e-all', root).addEventListener('click', () => { sel = { a: 0, b: dur() }; cursor = 0; render(); });
   $('.e-play', root).addEventListener('click', togglePlay);
@@ -207,17 +223,13 @@ function resetGain() {
 
 /** What the Apply button does for the current tool: { label, hint, run? } (no run = disabled). */
 function action() {
-  const sr = rec.sampleRate;
   switch (tool()) {
     case 'crop':
       if (wholeSelected()) return { label: 'Crop to selection', hint: 'Select the part to keep: drag on the waveform.' };
       return {
         label: `Crop to ${fmt(sel.a)} – ${fmt(sel.b)}`,
         hint: `Keeps ${fmt(sel.b - sel.a)} of ${fmt(dur())}; the rest is removed.`,
-        run: () => edit('Crop', () => {
-          const out = crop(pcm, sel.a * sr, sel.b * sr, sr, 10);
-          return { pcm: out, rec: shiftParts(shiftAfterCrop(rec, sel.a, out.length / sr), sel.a), shift: sel.a };
-        }, () => { sel = { a: 0, b: dur() }; cursor = 0; viewStart = 0; }),
+        run: () => addStep({ kind: 'crop', a: sel.a, b: sel.b }),
       };
     case 'gain': {
       const db = previewDb();
@@ -226,7 +238,7 @@ function action() {
       return {
         label: `Apply ${db > 0 ? '+' : ''}${db.toFixed(1)} dB`,
         hint,
-        run: () => edit('Gain', () => ({ pcm: applyGain(pcm, db), rec }), resetGain),
+        run: () => addStep({ kind: 'gain', db }, resetGain),
       };
     }
     case 'normalize': {
@@ -236,7 +248,7 @@ function action() {
       return {
         label: 'Normalize to −1 dBFS',
         hint: Math.abs(d) < 0.05 ? 'Already at −1 dBFS.' : `Brings the loudest point to just below clipping (${d > 0 ? '+' : ''}${d.toFixed(1)} dB on the whole track). Reduce hiss first.`,
-        run: Math.abs(d) < 0.05 ? undefined : () => edit('Normalize', () => ({ pcm: normalize(pcm, -1), rec })),
+        run: Math.abs(d) < 0.05 ? undefined : () => addStep({ kind: 'normalize' }),
       };
     }
     case 'hiss': {
@@ -249,10 +261,7 @@ function action() {
       return {
         label,
         hint,
-        run: () => {
-          const [a, b] = wholeSelected() ? quietestRegion(pcm, sr, 0.5) : [Math.round(sel.a * sr), Math.round(sel.b * sr)];
-          edit('Hiss reduction', () => ({ pcm: reduceNoise(pcm, a, b, level.db), rec }));
-        },
+        run: () => addStep(wholeSelected() ? { kind: 'hiss', db: level.db } : { kind: 'hiss', db: level.db, a: sel.a, b: sel.b }),
       };
     }
   }
@@ -313,54 +322,112 @@ function shiftAfterCrop(r, start, newDur) {
   return out;
 }
 
-async function edit(label, op, after) {
+// Session steps. Times in a step are in the audio as it was before that step.
+
+const MAX_KEPT_BYTES = 120e6; // intermediate results kept for quick removal
+
+function stepLabel(st) {
+  switch (st.kind) {
+    case 'crop': return `Crop to ${fmt(st.a)} – ${fmt(st.b)}`;
+    case 'gain': return `Gain ${st.db > 0 ? '+' : ''}${st.db.toFixed(1)} dB`;
+    case 'normalize': return 'Normalize to −1 dBFS';
+    case 'hiss': return `Reduce hiss ${st.db} dB${st.a != null ? ` (noise ${fmt(st.a)} – ${fmt(st.b)})` : ''}`;
+  }
+  return st.kind;
+}
+
+/** The result of applying step `st` to state { rec, pcm }. */
+function applyStep({ rec: r, pcm: x }, st) {
+  const sr = r.sampleRate;
+  let out = x, nr = r;
+  if (st.kind === 'crop') {
+    out = crop(x, st.a * sr, st.b * sr, sr, 10);
+    nr = shiftParts(shiftAfterCrop(r, st.a, out.length / sr), st.a);
+  } else if (st.kind === 'gain') out = applyGain(x, st.db);
+  else if (st.kind === 'normalize') out = normalize(x, -1);
+  else if (st.kind === 'hiss') {
+    const [a, b] = st.a == null ? quietestRegion(x, sr, 0.5) : [Math.round(st.a * sr), Math.round(st.b * sr)];
+    out = reduceNoise(x, a, b, st.db);
+  }
+  return { rec: { ...nr, lengthSamples: out.length }, pcm: out };
+}
+
+/** The audio after the first `n` steps, from the nearest kept state. */
+function stateAt(n) {
+  let j = n;
+  while (!states[j]) j--;
+  let st = states[j];
+  for (let k = j; k < n; k++) {
+    st = applyStep(st, steps[k]);
+    states[k + 1] = st;
+  }
+  // Keep the original and the latest; drop the oldest in between past the budget.
+  let bytes = states.reduce((t, s2) => t + (s2 ? s2.pcm.length * 2 : 0), 0);
+  for (let k = 1; k < states.length - 1 && bytes > MAX_KEPT_BYTES; k++) {
+    if (states[k] && k !== n) { bytes -= states[k].pcm.length * 2; states[k] = null; }
+  }
+  return st;
+}
+
+/** Where the audio starts in the original, in seconds: the crops' starts added up. */
+const cropShift = (list) => list.reduce((t, st) => t + (st.kind === 'crop' ? st.a : 0), 0);
+
+/**
+ * Make `next` the session's steps (the first `keep` are unchanged), apply
+ * them, and save the result.
+ */
+async function setSteps(next, keep, message, after) {
   if (busyFlag) return;
   stopPlayback();
   setBusy(true);
+  const prev = steps;
   try {
-    const before = { rec, pcm, shift: 0 };
     // Let the "Saving…" note paint before a slow edit runs.
     await new Promise((res) => requestAnimationFrame(() => setTimeout(res, 0)));
-    const result = op();
+    const before = cropShift(prev);
+    steps = next;
+    states.length = keep + 1;
+    const result = stateAt(steps.length);
     rec = await replacePcm(result.rec, result.pcm);
     pcm = result.pcm;
+    states[steps.length] = { rec, pcm };
     // An overdub part keeps its place in the take: cropping its start moves it later.
-    if (result.shift && rec.partOf) await movePart(rec, result.shift);
-    before.shift = result.shift ?? 0;
-    undo = before;
+    const d = cropShift(steps) - before;
+    if (d && rec.partOf) await movePart(rec, d);
     await loadGrid();
     peaksCache.clear();
-    after?.();
-    toast(`${label} applied.`);
+    if (d || prev.some((st) => st.kind === 'crop') !== steps.some((st) => st.kind === 'crop') || after === 'all') {
+      sel = { a: 0, b: dur() };
+      cursor = 0;
+    } else {
+      sel = { a: Math.min(sel.a, dur()), b: Math.min(sel.b, dur()) };
+      if (sel.b - sel.a < MIN_SEL) sel = { a: 0, b: dur() };
+    }
+    viewStart = clampView(viewStart);
+    if (typeof after === 'function') after();
+    toast(message);
   } catch (e) {
     console.error(e);
-    toast(isQuotaError(e) ? 'Storage is full; the edit was not saved.' : `${label} failed: ${e.message}`);
+    steps = prev;
+    states.length = Math.min(states.length, keep + 1);
+    toast(isQuotaError(e) ? 'Storage is full; the edit was not saved.' : `Edit failed: ${e.message}`);
   } finally {
     setBusy(false);
     render();
   }
 }
 
-async function doUndo() {
-  if (!undo || busyFlag) return;
-  stopPlayback();
-  setBusy(true);
-  try {
-    rec = await replacePcm(undo.rec, undo.pcm);
-    pcm = undo.pcm;
-    if (undo.shift && rec.partOf) await movePart(rec, -undo.shift);
-    undo = null;
-    await loadGrid();
-    peaksCache.clear();
-    sel = { a: 0, b: dur() };
-    viewStart = clampView(viewStart);
-    toast('Undone.');
-  } catch (e) {
-    toast(`Undo failed: ${e.message}`);
-  } finally {
-    setBusy(false);
-    render();
-  }
+function addStep(st, after) {
+  return setSteps([...steps, st], steps.length, `${stepLabel(st)} applied.`, st.kind === 'crop' ? 'all' : after);
+}
+
+/** Remove step `k`; later steps that point at times move back by what a removed crop cut. */
+function removeStep(k) {
+  const gone = steps[k];
+  if (!gone) return;
+  const d = gone.kind === 'crop' ? gone.a : 0;
+  const next = steps.filter((_, i) => i !== k).map((st, i) => (i >= k && d && st.a != null ? { ...st, a: st.a + d, b: st.b + d } : st));
+  return setSteps(next, k, `Removed: ${stepLabel(gone)}.`);
 }
 
 function setBusy(on) {
@@ -429,7 +496,11 @@ function render() {
   $('.e-apply', root).textContent = act.label;
   $('.e-apply', root).disabled = !act.run || busyFlag;
   $('.e-hint', root).textContent = act.hint;
-  $('.e-undo', root).disabled = !undo || busyFlag;
+  $('.e-undo', root).disabled = !steps.length || busyFlag;
+  $('.e-history', root).hidden = !steps.length;
+  const list = $('.e-steps', root);
+  const html = steps.map((st, i) => `<li><span>${escapeHtml(stepLabel(st))}</span><button class="btn icon e-step-x" data-step="${i}" aria-label="Remove ${escapeHtml(stepLabel(st))}"${busyFlag ? ' disabled' : ''}>×</button></li>`).join('');
+  if (list.innerHTML !== html) list.innerHTML = html;
   $('.e-sel', root).textContent = `${fmt(sel.a)} – ${fmt(sel.b)}`;
   $('.e-len', root).textContent = `${fmt(sel.b - sel.a)} of ${fmt(dur())}`;
   const p = peakDb(pcm);
@@ -513,6 +584,9 @@ async function togglePlay() {
   const sr = rec.sampleRate;
   const slice = int16ToFloat(pcm.subarray(Math.round(from * sr), Math.round(sel.b * sr)));
   if (!slice.length) { releaseAudio('editor'); return; }
+  // A gain still on the slider (not applied yet) is heard too.
+  const g = 10 ** (previewDb() / 20);
+  if (g !== 1) for (let i = 0; i < slice.length; i++) slice[i] = Math.max(-1, Math.min(1, slice[i] * g));
   const buf = ctx.createBuffer(1, slice.length, sr);
   buf.copyToChannel(slice, 0);
   const src = ctx.createBufferSource();

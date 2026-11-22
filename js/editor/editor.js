@@ -9,6 +9,7 @@ import { TIME_SIGS } from '../metronome/scheduler.js';
 import { int16ToFloat } from '../util/wav.js';
 import { computePeaks, drawWaveform, drawBars, barGrid } from './waveform.js';
 import { crop, applyGain, normalize, peakDb } from './edit-ops.js';
+import { reduceNoise, quietestRegion } from './denoise.js';
 import { $, $$, escapeHtml, toast } from '../util/dom.js';
 
 const ZOOMS = [1, 4, 16];
@@ -33,6 +34,7 @@ let busyFlag = false;
 let onCloseCb = null;
 let grid = null; // { first, beat, perBar } in seconds of this audio, when the take has a tempo
 const SNAPS = { free: 'Free', beat: 'Beat', bar: 'Bar' };
+const HISS = { light: { label: 'Light', db: 6 }, medium: { label: 'Medium', db: 10 }, strong: { label: 'Strong', db: 15 } };
 
 const dur = () => (rec ? rec.lengthSamples / rec.sampleRate : 0);
 const viewLen = () => dur() / zoom;
@@ -125,6 +127,13 @@ function markup() {
         <button class="btn e-gain-apply" disabled>Apply</button>
       </div>
       <button class="btn wide e-normalize">Normalize to −1 dBFS</button>
+      <div class="row e-hiss-row">
+        <span class="muted">Hiss</span>
+        <div class="segmented e-hiss-amt" role="radiogroup" aria-label="Hiss reduction strength">
+          ${Object.entries(HISS).map(([k, h]) => `<button class="btn" data-hiss="${k}" role="radio">${h.label}</button>`).join('')}
+        </div>
+      </div>
+      <button class="btn wide e-hiss">Reduce hiss</button>
       <div class="busy" hidden>Saving…</div>
     </div>`;
 }
@@ -166,6 +175,16 @@ function bind() {
     });
   });
   $('.e-normalize', root).addEventListener('click', () => edit('Normalize', () => ({ pcm: normalize(pcm, -1), rec })));
+  $$('[data-hiss]', root).forEach((b) => b.addEventListener('click', () => { settings.set('editor.hiss', b.dataset.hiss); render(); }));
+  $('.e-hiss', root).addEventListener('click', () => {
+    // The noise sample: the selection if one is made (a stretch with only
+    // hiss in it), otherwise the quietest half second of the take.
+    const sr = rec.sampleRate;
+    const partial = sel.a > 0.0005 || sel.b < dur() - 0.0005;
+    if (partial && sel.b - sel.a < 0.1) { toast('Select at least 0.1 s of just hiss, or select All.'); return; }
+    const [a, b] = partial ? [Math.round(sel.a * sr), Math.round(sel.b * sr)] : quietestRegion(pcm, sr, 0.5);
+    edit('Hiss reduction', () => ({ pcm: reduceNoise(pcm, a, b, HISS[hissLevel()].db), rec }));
+  });
 
   const c = $('.e-wave', root);
   c.addEventListener('pointerdown', onPointerDown);
@@ -197,6 +216,7 @@ async function loadGrid() {
   grid = barGrid(take, TIME_SIGS, shift);
 }
 
+const hissLevel = () => (HISS[settings.get('editor.hiss', 'medium')] ? settings.get('editor.hiss', 'medium') : 'medium');
 const snapMode = () => (grid ? settings.get('editor.snap', 'free') : 'free');
 /** Seconds between snap lines, or 0 for free. */
 const snapUnit = () => ({ beat: 1, bar: grid?.perBar }[snapMode()] ?? 0) * (grid?.beat ?? 0);
@@ -257,6 +277,8 @@ async function edit(label, op, after) {
   setBusy(true);
   try {
     const before = { rec, pcm, shift: 0 };
+    // Let the "Saving…" note paint before a slow edit runs.
+    await new Promise((res) => requestAnimationFrame(() => setTimeout(res, 0)));
     const result = op();
     rec = await replacePcm(result.rec, result.pcm);
     pcm = result.pcm;
@@ -347,6 +369,10 @@ function render() {
   $$('[data-snap]', root).forEach((b) => {
     b.classList.toggle('selected', b.dataset.snap === snapMode());
     b.setAttribute('aria-checked', b.dataset.snap === snapMode());
+  });
+  $$('[data-hiss]', root).forEach((b) => {
+    b.classList.toggle('selected', b.dataset.hiss === hissLevel());
+    b.setAttribute('aria-checked', b.dataset.hiss === hissLevel());
   });
   $('.e-undo', root).disabled = !undo || busyFlag;
   $('.e-sel', root).textContent = `${fmt(sel.a)} – ${fmt(sel.b)}`;

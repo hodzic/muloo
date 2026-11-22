@@ -462,7 +462,15 @@ button.player-title { flex: 1; appearance: none; border: 0; background: none; co
 .e-undo { flex: none; }
 .e-play.selected { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .e-play svg { width: 22px; height: 22px; fill: currentColor; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
-.e-gain-row .gain { flex: 1; }
+.e-tools { display: flex; flex-direction: column; gap: 0; }
+.e-tool .btn { padding-left: 4px; padding-right: 4px; }
+.e-tool .btn:first-child { border-radius: var(--radius) 0 0 0; }
+.e-tool .btn:last-child { border-radius: 0 var(--radius) 0 0; }
+.e-panel { display: flex; flex-direction: column; gap: 10px; padding: 12px; background: var(--surface); border: 1px solid var(--border, rgb(255 255 255 / 0.12)); border-top: 0; border-radius: 0 0 var(--radius) var(--radius); }
+.e-opt .gain { width: 100%; }
+.e-opt .gain output { white-space: nowrap; min-width: 64px; font-size: 16px; }
+.e-hiss-amt .btn { padding-left: 4px; padding-right: 4px; white-space: nowrap; }
+.e-hint { margin: 0; font-size: 14px; min-height: 2.6em; }
 .busy { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgb(0 0 0 / 0.55); font-weight: 700; border-radius: var(--radius); z-index: 2; }
 
 /* Share dialog */

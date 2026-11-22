@@ -1,5 +1,5 @@
-// Editor (DESIGN.md §5.7): waveform with 1×/4×/16× zoom, selection, crop,
-// gain, normalize and one level of undo. Each edit is saved immediately;
+// Editor (DESIGN.md §5.7): waveform with 1×/4×/16× zoom, selection, and the
+// tools crop, gain, normalize and reduce hiss with one level of undo. Each edit is saved immediately;
 // undo restores the previous audio until the next edit or leaving.
 
 import { getContext, holdAudio, releaseAudio } from '../audio/context.js';
@@ -34,6 +34,7 @@ let busyFlag = false;
 let onCloseCb = null;
 let grid = null; // { first, beat, perBar } in seconds of this audio, when the take has a tempo
 const SNAPS = { free: 'Free', beat: 'Beat', bar: 'Bar' };
+const TOOLS = { crop: 'Crop', gain: 'Gain', normalize: 'Normalize', hiss: 'Hiss' };
 const HISS = { light: { label: 'Light', db: 6 }, medium: { label: 'Medium', db: 10 }, strong: { label: 'Strong', db: 15 } };
 
 const dur = () => (rec ? rec.lengthSamples / rec.sampleRate : 0);
@@ -119,21 +120,25 @@ function markup() {
           ${Object.entries(SNAPS).map(([k, l]) => `<button class="btn" data-snap="${k}" role="radio">${l}</button>`).join('')}
         </div>
       </div>
-      <button class="btn primary wide e-crop">Crop to selection</button>
-      <div class="row e-gain-row">
-        <label class="gain">Gain <output class="e-gain-out">0 dB</output>
-          <input class="e-gain" type="range" min="-20" max="20" step="0.5" value="0" aria-label="Gain in dB">
-        </label>
-        <button class="btn e-gain-apply" disabled>Apply</button>
-      </div>
-      <button class="btn wide e-normalize">Normalize to −1 dBFS</button>
-      <div class="row e-hiss-row">
-        <span class="muted">Hiss</span>
-        <div class="segmented e-hiss-amt" role="radiogroup" aria-label="Hiss reduction strength">
-          ${Object.entries(HISS).map(([k, h]) => `<button class="btn" data-hiss="${k}" role="radio">${h.label}</button>`).join('')}
+      <div class="e-tools">
+        <div class="segmented e-tool" role="tablist" aria-label="Edit">
+          ${Object.entries(TOOLS).map(([k, l]) => `<button class="btn" data-tool="${k}" role="tab">${l}</button>`).join('')}
+        </div>
+        <div class="e-panel">
+          <div class="e-opt" data-for="gain" hidden>
+            <label class="gain"><output class="e-gain-out">0 dB</output>
+              <input class="e-gain" type="range" min="-20" max="20" step="0.5" value="0" aria-label="Gain in dB">
+            </label>
+          </div>
+          <div class="e-opt" data-for="hiss" hidden>
+            <div class="segmented e-hiss-amt" role="radiogroup" aria-label="Hiss reduction strength">
+              ${Object.entries(HISS).map(([k, h]) => `<button class="btn" data-hiss="${k}" role="radio">${h.label}</button>`).join('')}
+            </div>
+          </div>
+          <p class="muted e-hint"></p>
+          <button class="btn primary wide e-apply"></button>
         </div>
       </div>
-      <button class="btn wide e-hiss">Reduce hiss</button>
       <div class="busy" hidden>Saving…</div>
     </div>`;
 }
@@ -153,38 +158,14 @@ function bind() {
     }
     render();
   }));
-  $('.e-crop', root).addEventListener('click', () => {
-    if (sel.a <= 0.0005 && sel.b >= dur() - 0.0005) { toast('Select the part to keep first.'); return; }
-    edit('Crop', () => {
-      const sr = rec.sampleRate;
-      const out = crop(pcm, sel.a * sr, sel.b * sr, sr, 10);
-      return { pcm: out, rec: shiftParts(shiftAfterCrop(rec, sel.a, out.length / sr), sel.a), shift: sel.a };
-    }, () => { sel = { a: 0, b: dur() }; cursor = 0; viewStart = 0; });
-  });
-  const gain = $('.e-gain', root);
-  gain.addEventListener('input', () => {
-    $('.e-gain-out', root).textContent = `${gain.value > 0 ? '+' : ''}${(+gain.value).toFixed(1)} dB`;
-    $('.e-gain-apply', root).disabled = +gain.value === 0;
+  $$('[data-tool]', root).forEach((b) => b.addEventListener('click', () => {
+    settings.set('editor.tool', b.dataset.tool);
+    resetGain();
     render();
-  });
-  $('.e-gain-apply', root).addEventListener('click', () => {
-    const db = +gain.value;
-    edit('Gain', () => ({ pcm: applyGain(pcm, db), rec }), () => {
-      gain.value = 0;
-      gain.dispatchEvent(new Event('input'));
-    });
-  });
-  $('.e-normalize', root).addEventListener('click', () => edit('Normalize', () => ({ pcm: normalize(pcm, -1), rec })));
+  }));
+  $('.e-gain', root).addEventListener('input', render);
   $$('[data-hiss]', root).forEach((b) => b.addEventListener('click', () => { settings.set('editor.hiss', b.dataset.hiss); render(); }));
-  $('.e-hiss', root).addEventListener('click', () => {
-    // The noise sample: the selection if one is made (a stretch with only
-    // hiss in it), otherwise the quietest half second of the take.
-    const sr = rec.sampleRate;
-    const partial = sel.a > 0.0005 || sel.b < dur() - 0.0005;
-    if (partial && sel.b - sel.a < 0.1) { toast('Select at least 0.1 s of just hiss, or select All.'); return; }
-    const [a, b] = partial ? [Math.round(sel.a * sr), Math.round(sel.b * sr)] : quietestRegion(pcm, sr, 0.5);
-    edit('Hiss reduction', () => ({ pcm: reduceNoise(pcm, a, b, HISS[hissLevel()].db), rec }));
-  });
+  $('.e-apply', root).addEventListener('click', () => { const a = action(); if (a.run) a.run(); });
 
   const c = $('.e-wave', root);
   c.addEventListener('pointerdown', onPointerDown);
@@ -214,6 +195,67 @@ async function loadGrid() {
     shift = p.offset;
   }
   grid = barGrid(take, TIME_SIGS, shift);
+}
+
+const tool = () => (TOOLS[settings.get('editor.tool', 'crop')] ? settings.get('editor.tool', 'crop') : 'crop');
+const wholeSelected = () => sel.a <= 0.0005 && sel.b >= dur() - 0.0005;
+
+function resetGain() {
+  const g = $('.e-gain', root);
+  if (g) g.value = 0;
+}
+
+/** What the Apply button does for the current tool: { label, hint, run? } (no run = disabled). */
+function action() {
+  const sr = rec.sampleRate;
+  switch (tool()) {
+    case 'crop':
+      if (wholeSelected()) return { label: 'Crop to selection', hint: 'Select the part to keep: drag on the waveform.' };
+      return {
+        label: `Crop to ${fmt(sel.a)} – ${fmt(sel.b)}`,
+        hint: `Keeps ${fmt(sel.b - sel.a)} of ${fmt(dur())}; the rest is removed.`,
+        run: () => edit('Crop', () => {
+          const out = crop(pcm, sel.a * sr, sel.b * sr, sr, 10);
+          return { pcm: out, rec: shiftParts(shiftAfterCrop(rec, sel.a, out.length / sr), sel.a), shift: sel.a };
+        }, () => { sel = { a: 0, b: dur() }; cursor = 0; viewStart = 0; }),
+      };
+    case 'gain': {
+      const db = previewDb();
+      const hint = 'Changes the level of the whole track; the waveform shows the result before you apply it.';
+      if (!db) return { label: 'Apply gain', hint };
+      return {
+        label: `Apply ${db > 0 ? '+' : ''}${db.toFixed(1)} dB`,
+        hint,
+        run: () => edit('Gain', () => ({ pcm: applyGain(pcm, db), rec }), resetGain),
+      };
+    }
+    case 'normalize': {
+      const p = peakDb(pcm);
+      if (!Number.isFinite(p)) return { label: 'Normalize', hint: 'The track is silent.' };
+      const d = -1 - p;
+      return {
+        label: 'Normalize to −1 dBFS',
+        hint: Math.abs(d) < 0.05 ? 'Already at −1 dBFS.' : `Brings the loudest point to just below clipping (${d > 0 ? '+' : ''}${d.toFixed(1)} dB on the whole track). Reduce hiss first.`,
+        run: Math.abs(d) < 0.05 ? undefined : () => edit('Normalize', () => ({ pcm: normalize(pcm, -1), rec })),
+      };
+    }
+    case 'hiss': {
+      const level = HISS[hissLevel()];
+      const label = `Reduce hiss ${level.db} dB`;
+      if (!wholeSelected() && sel.b - sel.a < 0.1) return { label, hint: 'Select at least 0.1 s with only hiss in it, or All.' };
+      const hint = wholeSelected()
+        ? 'Learns the hiss from the quietest half second. Better: select a stretch with only hiss (e.g. the end) first.'
+        : `Learns the hiss from the selection (${fmt(sel.a)} – ${fmt(sel.b)}) and reduces it in the whole track.`;
+      return {
+        label,
+        hint,
+        run: () => {
+          const [a, b] = wholeSelected() ? quietestRegion(pcm, sr, 0.5) : [Math.round(sel.a * sr), Math.round(sel.b * sr)];
+          edit('Hiss reduction', () => ({ pcm: reduceNoise(pcm, a, b, level.db), rec }));
+        },
+      };
+    }
+  }
 }
 
 const hissLevel = () => (HISS[settings.get('editor.hiss', 'medium')] ? settings.get('editor.hiss', 'medium') : 'medium');
@@ -324,7 +366,8 @@ async function doUndo() {
 function setBusy(on) {
   busyFlag = on;
   $('.busy', root).hidden = !on;
-  $$('button, input', root).forEach((el) => { el.disabled = on || (el.classList.contains('e-undo') && !undo) || (el.classList.contains('e-gain-apply') && +$('.e-gain', root).value === 0); });
+  $$('button, input', root).forEach((el) => { el.disabled = on; });
+  if (!on) render();
 }
 
 function setZoom(z) {
@@ -374,6 +417,18 @@ function render() {
     b.classList.toggle('selected', b.dataset.hiss === hissLevel());
     b.setAttribute('aria-checked', b.dataset.hiss === hissLevel());
   });
+  const t = tool();
+  $$('[data-tool]', root).forEach((b) => {
+    b.classList.toggle('selected', b.dataset.tool === t);
+    b.setAttribute('aria-selected', b.dataset.tool === t);
+  });
+  $$('.e-opt', root).forEach((o) => { o.hidden = o.dataset.for !== t; });
+  const g = previewDb();
+  $('.e-gain-out', root).textContent = `${g > 0 ? '+' : ''}${g.toFixed(1)} dB`;
+  const act = action();
+  $('.e-apply', root).textContent = act.label;
+  $('.e-apply', root).disabled = !act.run || busyFlag;
+  $('.e-hint', root).textContent = act.hint;
   $('.e-undo', root).disabled = !undo || busyFlag;
   $('.e-sel', root).textContent = `${fmt(sel.a)} – ${fmt(sel.b)}`;
   $('.e-len', root).textContent = `${fmt(sel.b - sel.a)} of ${fmt(dur())}`;
@@ -389,7 +444,7 @@ function render() {
 }
 
 /** The gain slider's value in dB, previewed on the waveform until applied. */
-const previewDb = () => +($('.e-gain', root)?.value ?? 0);
+const previewDb = () => (tool() === 'gain' ? +($('.e-gain', root)?.value ?? 0) : 0);
 
 function draw(playhead = null) {
   const c = $('.e-wave', root);

@@ -3,6 +3,7 @@ import { yin, cents, noteInfo, parseNote, midiToFreq } from '../js/tuner/pitch.j
 import { encodeWav, decodeWav, floatToInt16 } from '../js/util/wav.js';
 import { computePeaks } from '../js/editor/waveform.js';
 import { crop, applyGain, normalize, peak, peakDb, mixLayers } from '../js/editor/edit-ops.js';
+import { reduceNoise, quietestRegion } from '../js/editor/denoise.js';
 import { analyzeBeats, stringPairs, beatTarget } from '../js/tuner/beats.js';
 import { flatten, parseOrder, formatOrder, playOrder, orderFromMarkers, barPlan, validateMap } from '../js/scores/score-map.js';
 import { detectPage } from '../js/scores/detect.js';
@@ -166,6 +167,29 @@ export function runDspChecks() {
       && peak(loud) === 32768 && src[5] === floatToInt16(tone(440, { n: 48000, amp: 0.25 }))[5],
     detail: `normalized peak ${peakDb(norm).toFixed(3)} dBFS, +6 dB ratio ${(peak(plus6) / peak(src)).toFixed(4)}`,
   });
+
+  // Hiss reduction: a 440 Hz tone over white noise, then 1 s of noise only.
+  {
+    let s2 = 7;
+    const r2 = () => ((s2 = (s2 * 16807) % 2147483647) / 2147483647) * 2 - 1;
+    const L = SR * 4, quiet = SR * 3;
+    const clean = new Float32Array(L), noisy = new Int16Array(L);
+    for (let i = 0; i < L; i++) {
+      clean[i] = i < quiet ? 8000 * Math.sin((2 * Math.PI * 440 * i) / SR) : 0;
+      noisy[i] = Math.round(clean[i] + 300 * r2());
+    }
+    const before = noisy.slice();
+    const [qa, qb] = quietestRegion(noisy, SR, 0.5);
+    const out = reduceNoise(noisy, qa, qb, 10);
+    const rms = (x, a, b) => { let q = 0; for (let i = a; i < b; i++) q += x[i] * x[i]; return Math.sqrt(q / (b - a)); };
+    const cut = 20 * Math.log10(rms(out, quiet + SR / 4, L - SR / 4) / rms(noisy, quiet + SR / 4, L - SR / 4));
+    const snr = (x) => { let e = 0, s = 0; for (let i = SR; i < 2 * SR; i++) { e += (x[i] - clean[i]) ** 2; s += clean[i] ** 2; } return 10 * Math.log10(s / e); };
+    results.push({
+      name: 'Reduce hiss: noise-only part down ~10 dB, tone kept, input untouched',
+      pass: qa >= quiet && cut < -8 && cut > -11 && snr(out) > snr(noisy) + 5 && out.length === L && noisy.every((v, i) => v === before[i]),
+      detail: `quiet ${(qa / SR).toFixed(2)} s, noise ${cut.toFixed(1)} dB, tone SNR ${snr(noisy).toFixed(1)} → ${snr(out).toFixed(1)} dB`,
+    });
+  }
 
   // Beat mode: two decaying tones at 110 Hz plus an offset (DESIGN.md §9).
   for (const off of [0.5, 1, 2, 5, 10]) {

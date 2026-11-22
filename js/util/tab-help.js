@@ -115,6 +115,7 @@ const HELP = {
       <li>The scissors button opens the editor. Drag to select; zoom 1×, 4× or 16× to be precise, and All selects everything.</li>
       <li>For a take with a tempo (recorded with the metronome), Snap to Beat or Bar makes the selection edges jump to the beat or bar lines, drawn on the waveform; Free selects anywhere.</li>
       <li>Crop keeps only the selection. Gain makes the selection louder or quieter; Normalize brings the loudest point up to just below clipping.</li>
+      <li>Reduce hiss turns down steady background noise (hiss, hum) while leaving the playing alone. It learns what the noise sounds like from the selection, so select a stretch with only hiss in it (e.g. the quiet at the end), or select All to let it find the quietest half second itself. Light, Medium and Strong cut the noise by 6, 10 and 15 dB; Strong can make what is left sound watery. Reduce hiss before you normalize.</li>
       <li>Edits are saved straight away. Undo takes back the last one.</li>
     </ul>`,
 };

@@ -90,6 +90,7 @@ All data stays on the device.
   player/player.js
   editor/waveform.js  peak computation + canvas drawing
   editor/edit-ops.js  crop, gain, normalize, fades (pure functions)
+  editor/denoise.js   hiss reduction (spectral gating)
   storage/db.js       IndexedDB wrapper
   util/wav.js         WAV encode/decode
 /vendor/pdfjs/
@@ -336,6 +337,7 @@ Each score has a **score map**: the location of every row of music (system) and 
   - Applies 10 ms fade-in and fade-out at the new edges.
 - **Gain:** −20 to +20 dB, applied to the whole recording.
 - **Normalize:** scales the recording so its peak is at −1 dBFS.
+- **Reduce hiss:** spectral gating (`denoise.js`). Learns a noise profile from the selection, or from the quietest 0.5 s when everything is selected. Bins more than 9 dB above the profile pass; the rest are cut by 6, 10 or 15 dB, with the gain held for ±2 frames and smoothed over ±3 bins. FFT 2048 at 75% overlap.
 - **Undo:** one level. Keep the previous PCM until the next edit or until the user leaves the editor.
 - **Implementation:** all edit operations are pure functions in `edit-ops.js` that take Int16 or Float32 data.
 

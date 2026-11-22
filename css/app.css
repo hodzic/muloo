@@ -471,6 +471,13 @@ button.player-title { flex: 1; appearance: none; border: 0; background: none; co
 .e-opt .gain output { white-space: nowrap; min-width: 64px; font-size: 16px; }
 .e-hiss-amt .btn { padding-left: 4px; padding-right: 4px; white-space: nowrap; }
 .e-hint { margin: 0; font-size: 14px; min-height: 2.6em; }
+.e-history { display: flex; flex-direction: column; gap: 6px; }
+.e-history-head { display: flex; justify-content: space-between; font-size: 14px; font-weight: 600; }
+.e-steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; counter-reset: step; }
+.e-steps li { display: flex; align-items: center; gap: 8px; padding: 2px 2px 2px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-size: 14px; counter-increment: step; }
+.e-steps li::before { content: counter(step) "."; color: var(--muted); font-variant-numeric: tabular-nums; }
+.e-steps li span { flex: 1; min-width: 0; }
+.e-step-x { flex: none; font-size: 20px; line-height: 1; }
 .busy { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgb(0 0 0 / 0.55); font-weight: 700; border-radius: var(--radius); z-index: 2; }
 
 /* Share dialog */

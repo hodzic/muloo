@@ -339,7 +339,7 @@ Each score has a **score map**: the location of every row of music (system) and 
 - **Normalize:** scales the recording so its peak is at −1 dBFS.
 - **Reduce hiss:** spectral gating (`denoise.js`). Learns a noise profile from the selection, or from the quietest 0.5 s when everything is selected. Bins more than 9 dB above the profile pass; the rest are cut by 6, 10 or 15 dB, with the gain held for ±2 frames and smoothed over ±3 bins. FFT 2048 at 75% overlap.
 - **Layout:** a tab row (Crop, Gain, Normalize, Hiss) under the waveform picks the tool; its panel holds the tool's options, a line saying what Apply will do, and one Apply button labelled with the action (disabled when it would do nothing). Back and Undo stay in the header.
-- **Undo:** one level. Keep the previous PCM until the next edit or until the user leaves the editor.
+- **Edit list (session undo):** the session's edits are a list of steps (with their settings, times in the audio as it was before each step) applied in order to the audio as opened. The result is saved after every change. Removing any step applies the rest again from the original (a removed crop moves later steps' times back); Undo removes the last. Intermediate results are kept up to ~120 MB for quick removal. The list ends when the editor is left. Play includes a gain still on the slider.
 - **Implementation:** all edit operations are pure functions in `edit-ops.js` that take Int16 or Float32 data.
 
 ### 5.8 Library and export

@@ -12,6 +12,7 @@ import { int16ToFloat } from '../util/wav.js';
 import { computePeaks, drawWaveform, drawBars, barGrid } from './waveform.js';
 import { crop, applyGain, normalize, peakDb } from './edit-ops.js';
 import { reduceNoise, quietestRegion } from './denoise.js';
+import { FLAT, EQ_PRESETS, isFlat, applyEq, createEqChain, detectHum } from './eq.js';
 import { $, $$, escapeHtml, toast } from '../util/dom.js';
 
 const ZOOMS = [1, 4, 16];
@@ -38,7 +39,10 @@ let busyFlag = false;
 let onCloseCb = null;
 let grid = null; // { first, beat, perBar } in seconds of this audio, when the take has a tempo
 const SNAPS = { free: 'Free', beat: 'Beat', bar: 'Bar' };
-const TOOLS = { crop: 'Crop', gain: 'Gain', normalize: 'Normalize', hiss: 'Hiss' };
+const TOOLS = { crop: 'Crop', gain: 'Gain', normalize: 'Normalize', hiss: 'Hiss', eq: 'EQ' };
+const EQ_RANGES = { low: [30, 150, 5], warmth: [-6, 6, 0.5], presence: [-6, 9, 0.5] };
+const EQ_NAMES = { low: 'Low cut', warmth: 'Warmth', presence: 'Presence' };
+let eqSet = { ...FLAT }; // EQ being tried, not applied yet
 const HISS = { light: { label: 'Light', db: 6 }, medium: { label: 'Medium', db: 10 }, strong: { label: 'Strong', db: 15 } };
 
 const dur = () => (rec ? rec.lengthSamples / rec.sampleRate : 0);
@@ -143,6 +147,20 @@ function markup() {
               ${Object.entries(HISS).map(([k, h]) => `<button class="btn" data-hiss="${k}" role="radio">${h.label}</button>`).join('')}
             </div>
           </div>
+          <div class="e-opt e-eq" data-for="eq" hidden>
+            <div class="e-eq-presets">
+              ${Object.entries(EQ_PRESETS).map(([k, pr]) => `<button class="btn" data-eqp="${k}">${pr.label}</button>`).join('')}
+            </div>
+            ${Object.entries(EQ_RANGES).map(([k, [min, max, step]]) => `
+            <label class="eq-row"><span>${EQ_NAMES[k]}</span><output data-eq-out="${k}"></output>
+              <input type="range" data-eq="${k}" min="${min}" max="${max}" step="${step}" value="${k === 'low' ? min : 0}" aria-label="${EQ_NAMES[k]}">
+            </label>`).join('')}
+            <div class="eq-row"><span>Hum</span>
+              <div class="segmented e-eq-hum" role="radiogroup" aria-label="Hum notch">
+                ${[0, 50, 60].map((h) => `<button class="btn" data-hum="${h}" role="radio">${h ? `${h} Hz` : 'Off'}</button>`).join('')}
+              </div>
+            </div>
+          </div>
           <p class="muted e-hint"></p>
           <button class="btn primary wide e-apply"></button>
         </div>
@@ -177,9 +195,23 @@ function bind() {
   $$('[data-tool]', root).forEach((b) => b.addEventListener('click', () => {
     settings.set('editor.tool', b.dataset.tool);
     resetGain();
-    render();
+    setEq(FLAT);
   }));
   $('.e-gain', root).addEventListener('input', render);
+  $$('[data-eq]', root).forEach((el) => el.addEventListener('input', () => {
+    const v = +el.value;
+    setEq({ ...eqSet, [el.dataset.eq]: el.dataset.eq === 'low' && v <= EQ_RANGES.low[0] ? 0 : v });
+  }));
+  $$('[data-hum]', root).forEach((b) => b.addEventListener('click', () => setEq({ ...eqSet, hum: +b.dataset.hum })));
+  $$('[data-eqp]', root).forEach((b) => b.addEventListener('click', () => {
+    const set = { ...EQ_PRESETS[b.dataset.eqp].set };
+    if (set.hum === 'auto') {
+      // 50 or 60 Hz: whichever is stronger in the quietest second.
+      const [a, z] = quietestRegion(pcm, rec.sampleRate, 1);
+      set.hum = detectHum(pcm, rec.sampleRate, a, z);
+    }
+    setEq(set);
+  }));
   $$('[data-hiss]', root).forEach((b) => b.addEventListener('click', () => { settings.set('editor.hiss', b.dataset.hiss); render(); }));
   $('.e-apply', root).addEventListener('click', () => { const a = action(); if (a.run) a.run(); });
 
@@ -216,6 +248,29 @@ async function loadGrid() {
 const tool = () => (TOOLS[settings.get('editor.tool', 'crop')] ? settings.get('editor.tool', 'crop') : 'crop');
 const wholeSelected = () => sel.a <= 0.0005 && sel.b >= dur() - 0.0005;
 
+/** Change the EQ being tried: controls, the live preview, the panel. */
+function setEq(set) {
+  eqSet = { ...set };
+  for (const k of Object.keys(EQ_RANGES)) {
+    const el = $(`[data-eq="${k}"]`, root);
+    if (el) el.value = k === 'low' && !eqSet.low ? EQ_RANGES.low[0] : eqSet[k];
+  }
+  player?.eq?.set(previewEq());
+  render();
+}
+
+const previewEq = () => (tool() === 'eq' ? eqSet : FLAT);
+
+function eqText(st) {
+  const sign = (v) => `${v > 0 ? '+' : v < 0 ? '−' : ''}${Math.abs(v)}`;
+  const parts = [];
+  if (st.low) parts.push(`low cut ${st.low} Hz`);
+  if (st.warmth) parts.push(`warmth ${sign(st.warmth)} dB`);
+  if (st.presence) parts.push(`presence ${sign(st.presence)} dB`);
+  if (st.hum) parts.push(`hum ${st.hum} Hz`);
+  return parts.join(', ');
+}
+
 function resetGain() {
   const g = $('.e-gain', root);
   if (g) g.value = 0;
@@ -249,6 +304,16 @@ function action() {
         label: 'Normalize to −1 dBFS',
         hint: Math.abs(d) < 0.05 ? 'Already at −1 dBFS.' : `Brings the loudest point to just below clipping (${d > 0 ? '+' : ''}${d.toFixed(1)} dB on the whole track). Reduce hiss first.`,
         run: Math.abs(d) < 0.05 ? undefined : () => addStep({ kind: 'normalize' }),
+      };
+    }
+    case 'eq': {
+      if (isFlat(eqSet)) return { label: 'Apply EQ', hint: 'Pick a preset or move a slider, then Play to hear it; changes are heard live.' };
+      const st = { kind: 'eq', ...eqSet };
+      const hum = eqSet.hum ? ` Hum notches at ${[1, 2, 3, 4].map((h) => h * eqSet.hum).join(', ')} Hz.` : '';
+      return {
+        label: 'Apply EQ',
+        hint: `${eqText(eqSet)[0].toUpperCase()}${eqText(eqSet).slice(1)} on the whole track.${hum} Play to hear it.`,
+        run: () => addStep(st, () => setEq(FLAT)),
       };
     }
     case 'hiss': {
@@ -331,6 +396,7 @@ function stepLabel(st) {
     case 'crop': return `Crop to ${fmt(st.a)} – ${fmt(st.b)}`;
     case 'gain': return `Gain ${st.db > 0 ? '+' : ''}${st.db.toFixed(1)} dB`;
     case 'normalize': return 'Normalize to −1 dBFS';
+    case 'eq': return `EQ: ${eqText(st)}`;
     case 'hiss': return `Reduce hiss ${st.db} dB${st.a != null ? ` (noise ${fmt(st.a)} – ${fmt(st.b)})` : ''}`;
   }
   return st.kind;
@@ -344,6 +410,7 @@ function applyStep({ rec: r, pcm: x }, st) {
     out = crop(x, st.a * sr, st.b * sr, sr, 10);
     nr = shiftParts(shiftAfterCrop(r, st.a, out.length / sr), st.a);
   } else if (st.kind === 'gain') out = applyGain(x, st.db);
+  else if (st.kind === 'eq') out = applyEq(x, sr, st);
   else if (st.kind === 'normalize') out = normalize(x, -1);
   else if (st.kind === 'hiss') {
     const [a, b] = st.a == null ? quietestRegion(x, sr, 0.5) : [Math.round(st.a * sr), Math.round(st.b * sr)];
@@ -490,6 +557,19 @@ function render() {
     b.setAttribute('aria-selected', b.dataset.tool === t);
   });
   $$('.e-opt', root).forEach((o) => { o.hidden = o.dataset.for !== t; });
+  for (const k of Object.keys(EQ_RANGES)) {
+    const v = eqSet[k];
+    $(`[data-eq-out="${k}"]`, root).textContent = k === 'low' ? (v ? `${v} Hz` : 'Off') : `${v > 0 ? '+' : ''}${(+v).toFixed(1)} dB`;
+  }
+  $$('[data-hum]', root).forEach((b) => {
+    b.classList.toggle('selected', +b.dataset.hum === eqSet.hum);
+    b.setAttribute('aria-checked', +b.dataset.hum === eqSet.hum);
+  });
+  $$('[data-eqp]', root).forEach((b) => {
+    const pr = EQ_PRESETS[b.dataset.eqp].set;
+    const same = ['low', 'warmth', 'presence'].every((k) => pr[k] === eqSet[k]) && (pr.hum === 'auto' ? !!eqSet.hum : pr.hum === eqSet.hum);
+    b.classList.toggle('selected', same);
+  });
   const g = previewDb();
   $('.e-gain-out', root).textContent = `${g > 0 ? '+' : ''}${g.toFixed(1)} dB`;
   const act = action();
@@ -591,10 +671,14 @@ async function togglePlay() {
   buf.copyToChannel(slice, 0);
   const src = ctx.createBufferSource();
   src.buffer = buf;
-  src.connect(ctx.destination);
+  // The EQ being tried is heard live: the chain follows the sliders.
+  const eq = createEqChain(ctx);
+  eq.set(previewEq());
+  src.connect(eq.input);
+  eq.output.connect(ctx.destination);
   src.onended = () => { if (player?.src === src) stopPlayback(); };
   src.start();
-  player = { src, startCtx: ctx.currentTime, startSec: from };
+  player = { src, eq, startCtx: ctx.currentTime, startSec: from };
   setPlayIcon(true);
 }
 
@@ -612,6 +696,7 @@ function stopPlayback() {
   const p = player;
   player = null;
   try { p.src.stop(); } catch { /* already ended */ }
+  p.eq?.output.disconnect();
   releaseAudio('editor');
   if (root) {
     setPlayIcon(false);

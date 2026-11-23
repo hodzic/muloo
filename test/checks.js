@@ -4,6 +4,7 @@ import { encodeWav, decodeWav, floatToInt16 } from '../js/util/wav.js';
 import { computePeaks } from '../js/editor/waveform.js';
 import { crop, applyGain, normalize, peak, peakDb, mixLayers } from '../js/editor/edit-ops.js';
 import { reduceNoise, quietestRegion } from '../js/editor/denoise.js';
+import { applyEq, detectHum } from '../js/editor/eq.js';
 import { analyzeBeats, stringPairs, beatTarget } from '../js/tuner/beats.js';
 import { flatten, parseOrder, formatOrder, playOrder, orderFromMarkers, barPlan, validateMap } from '../js/scores/score-map.js';
 import { detectPage } from '../js/scores/detect.js';
@@ -188,6 +189,29 @@ export function runDspChecks() {
       name: 'Reduce hiss: noise-only part down ~10 dB, tone kept, input untouched',
       pass: qa >= quiet && cut < -8 && cut > -11 && snr(out) > snr(noisy) + 5 && out.length === L && noisy.every((v, i) => v === before[i]),
       detail: `quiet ${(qa / SR).toFixed(2)} s, noise ${cut.toFixed(1)} dB, tone SNR ${snr(noisy).toFixed(1)} → ${snr(out).toFixed(1)} dB`,
+    });
+  }
+
+  // EQ: level change of single tones through each band.
+  {
+    const sine = (f, amp = 8000, n = SR) => Int16Array.from({ length: n }, (_, i) => Math.round(amp * Math.sin((2 * Math.PI * f * i) / SR)));
+    const rmsDb = (x) => { let q = 0; for (let i = SR / 2; i < x.length; i++) q += x[i] * x[i]; return 10 * Math.log10(q / (x.length - SR / 2)); };
+    const change = (f, set) => { const x = sine(f); return rmsDb(applyEq(x, SR, set)) - rmsDb(x); };
+    const flat = { low: 0, warmth: 0, presence: 0, hum: 0 };
+    const r = {
+      lowcut40: change(40, { ...flat, low: 100 }), lowcut1k: change(1000, { ...flat, low: 100 }), lowcutAt: change(100, { ...flat, low: 100 }),
+      warm: change(200, { ...flat, warmth: -4 }), pres: change(3000, { ...flat, presence: 6 }), pres200: change(200, { ...flat, presence: 6 }),
+      hum120: change(120, { ...flat, hum: 60 }), hum440: change(440, { ...flat, hum: 60 }),
+    };
+    const loud = applyEq(sine(3000, 30000), SR, { ...flat, presence: 9 });
+    const humSig = Int16Array.from({ length: SR }, (_, i) => Math.round(300 * Math.sin((2 * Math.PI * 120 * i) / SR) + 100 * Math.sin((2 * Math.PI * 180 * i) / SR)));
+    results.push({
+      name: 'EQ: low cut, warmth, presence, hum notch; no clipping; hum 50/60 detection',
+      pass: r.lowcut40 < -14 && Math.abs(r.lowcut1k) < 0.1 && Math.abs(r.lowcutAt + 3) < 0.3
+        && Math.abs(r.warm + 4) < 0.1 && Math.abs(r.pres - 6) < 0.1 && r.pres200 < 0.5
+        && r.hum120 < -30 && Math.abs(r.hum440) < 0.2
+        && peakDb(loud) <= -0.99 && peakDb(loud) > -1.1 && detectHum(humSig, SR, 0, SR) === 60,
+      detail: Object.entries(r).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(', ') + `, boosted peak ${peakDb(loud).toFixed(2)} dBFS`,
     });
   }
 

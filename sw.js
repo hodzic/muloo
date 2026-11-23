@@ -3,7 +3,7 @@
 // Run `npm run bump` whenever a shell file changes: it sets CACHE to the new version, so clients get the update toast.
 importScripts('/shared/sw-core.js');
 
-const CACHE = 'muloo-2026-11-22c';
+const CACHE = 'muloo-2026-11-22d';
 const INBOX = 'muloo-inbox';
 const OWN = /^(muloo-|gp-v)/; // this app's caches, old names included
 
@@ -30,6 +30,7 @@ const SHELL = [
   'js/editor/waveform.js',
   'js/editor/edit-ops.js',
   'js/editor/denoise.js',
+  'js/editor/eq.js',
   'js/editor/editor.js',
   'js/library/dialogs.js',
   'js/library/export.js',

@@ -29,7 +29,7 @@ export async function pickFormat(sampleRate) {
   return null;
 }
 
-async function resample(f32, from, to) {
+export async function resample(f32, from, to) {
   const ctx = new OfflineAudioContext(1, Math.ceil((f32.length * to) / from), to);
   const buf = ctx.createBuffer(1, f32.length, from);
   buf.copyToChannel(f32, 0);
@@ -40,7 +40,7 @@ async function resample(f32, from, to) {
   return (await ctx.startRendering()).getChannelData(0);
 }
 
-function waitForQueue(enc) {
+export function waitForQueue(enc) {
   return new Promise((resolve) => {
     if ('ondequeue' in enc) enc.addEventListener('dequeue', resolve, { once: true });
     else setTimeout(resolve, 5);

@@ -108,7 +108,7 @@ const HELP = {
       <li>The scissors at the top edit the whole take: the parts are mixed into one track first.</li>
       <li>Tap a track's name to rename it.</li>
       <li>Takes recorded with the metronome show numbered bar lines on the waveform (and beat lines while lining up a part); Bars beside Loop turns them off or on.</li>
-      <li>Each part has its own volume; × deletes a part. If parts together get too loud, the whole mix is turned down instead of distorting. Sharing sends the mix; tick “Include the parts separately” to also send each part, so a friend’s MuLoo imports the take with its parts (other apps still play the mix). Editing mixes the parts into one track first.</li>
+      <li>Each part has its own volume; × deletes a part. If parts together get too loud, the whole mix is turned down instead of distorting. Sharing sends the mix (Video with title card makes an MP4 of the take with a still title card, for photo albums like Google Photos that don’t take audio files; it is dated with the recording’s date); tick “Include the parts separately” to also send each part, so a friend’s MuLoo imports the take with its parts (other apps still play the mix). Editing mixes the parts into one track first.</li>
     </ul>
         <h3>Editor</h3>
     <ul>

@@ -5,6 +5,7 @@ import { listScores } from '../scores/scores.js';
 import { encodeWav } from '../util/wav.js';
 import { encodeForSharing, pickFormat, shareFileName, shareOrDownload, download } from './export.js';
 import { withTag, tagFor, partFiles } from './import.js';
+import { pickVideoFormat, drawTitleCard, encodeTitleVideo } from './video.js';
 import { $, escapeHtml, formatBytes, toast } from '../util/dom.js';
 
 const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -30,6 +31,14 @@ export async function openShareDialog(rec) {
       <button class="btn primary wide" data-what="full">Share take (${fmtDur(durationSec(rec))})</button>
       ${hasLoop ? `<button class="btn wide" data-what="loop">Share A/B loop (${fmtDur(rec.loopB - rec.loopA)})</button>` : ''}
       <button class="btn wide" data-what="wav">Export WAV · full quality (${formatBytes(44 + rec.lengthSamples * 2)})</button>
+      <button class="btn wide share-video-open" hidden>Video with title card (for photo albums)…</button>
+      <div class="share-video" hidden>
+        <canvas class="share-video-preview" aria-label="Title card preview"></canvas>
+        <label>Title <input class="v-title" type="text" maxlength="120"></label>
+        <label>Subtitle <input class="v-subtitle" type="text" maxlength="120" placeholder="e.g. the artist"></label>
+        <label>Bottom line <input class="v-footer" type="text" maxlength="120"></label>
+        <button class="btn primary wide" data-what="video">Share video (${fmtDur(durationSec(rec))})</button>
+      </div>
       <div class="progress" hidden><div class="progress-bar"><div class="progress-fill"></div></div><span class="progress-text"></span></div>
       <button class="btn primary wide share-now" hidden>Share now</button>
       <button class="btn wide share-close">Close</button>
@@ -39,6 +48,30 @@ export async function openShareDialog(rec) {
     $('.share-format', d).textContent = f
       ? `Shared as ${f.label}, about 1 MB per minute.`
       : 'This device can’t compress audio, so takes are shared as WAV.';
+  });
+
+  // Video with a title card: only where the device can encode one.
+  pickVideoFormat(rec.sampleRate).then(async (f) => {
+    if (!f || !d.open) return;
+    const score = rec.scoreId ? (await listScores().catch(() => [])).find((x) => x.id === rec.scoreId) : null;
+    const date = new Date(rec.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+    $('.v-title', d).value = score?.title || rec.name;
+    $('.v-footer', d).value = `Recorded ${date} · MuLoo`;
+    const preview = () => drawTitleCard($('.share-video-preview', d), videoCard());
+    d.querySelectorAll('.share-video input').forEach((i) => i.addEventListener('input', preview));
+    const open = $('.share-video-open', d);
+    open.hidden = false;
+    open.onclick = () => {
+      open.hidden = true;
+      $('.share-video', d).hidden = false;
+      preview();
+      $('.v-subtitle', d).focus();
+    };
+  });
+  const videoCard = () => ({
+    title: $('.v-title', d).value.trim() || rec.name,
+    subtitle: $('.v-subtitle', d).value.trim(),
+    footer: $('.v-footer', d).value.trim(),
   });
 
   const busy = (on) => d.querySelectorAll('[data-what]').forEach((b) => { b.disabled = on; });
@@ -61,6 +94,16 @@ export async function openShareDialog(rec) {
         suffix = ' (loop)';
       }
       let result;
+      if (what === 'video') {
+        result = await encodeTitleVideo(pcm, rec.sampleRate, videoCard(), {
+          createdAt: rec.createdAt,
+          onProgress: (f) => progress(f, `Making the video… ${Math.round(f * 100)}%`),
+        });
+        const name = shareFileName(rec, result.ext);
+        progress(1, `${name} · ${formatBytes(result.blob.size)}`);
+        await deliver(d, result.blob, name, rec.name);
+        return;
+      }
       if (what === 'wav') {
         result = { blob: new Blob([encodeWav(pcm, rec.sampleRate)], { type: 'audio/wav' }), ext: 'wav' };
       } else {

@@ -470,6 +470,7 @@ button.player-title { flex: 1; appearance: none; border: 0; background: none; co
 .e-opt .gain { width: 100%; }
 .e-opt .gain output { white-space: nowrap; min-width: 64px; font-size: 16px; }
 .e-hiss-amt .btn { padding-left: 4px; padding-right: 4px; white-space: nowrap; }
+.e-level .btn { white-space: nowrap; font-size: 14px; padding-left: 2px; padding-right: 2px; min-width: 0; }
 .e-hint { margin: 0; font-size: 14px; min-height: 2.6em; }
 .e-eq { display: flex; flex-direction: column; gap: 10px; }
 .e-eq-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }

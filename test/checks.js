@@ -5,6 +5,7 @@ import { computePeaks } from '../js/editor/waveform.js';
 import { crop, applyGain, normalize, peak, peakDb, mixLayers } from '../js/editor/edit-ops.js';
 import { reduceNoise, quietestRegion } from '../js/editor/denoise.js';
 import { applyEq, detectHum } from '../js/editor/eq.js';
+import { integratedLoudness, toLoudness } from '../js/editor/loudness.js';
 import { analyzeBeats, stringPairs, beatTarget } from '../js/tuner/beats.js';
 import { flatten, parseOrder, formatOrder, playOrder, orderFromMarkers, barPlan, validateMap } from '../js/scores/score-map.js';
 import { detectPage } from '../js/scores/detect.js';
@@ -212,6 +213,29 @@ export function runDspChecks() {
         && r.hum120 < -30 && Math.abs(r.hum440) < 0.2
         && peakDb(loud) <= -0.99 && peakDb(loud) > -1.1 && detectHum(humSig, SR, 0, SR) === 60,
       detail: Object.entries(r).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(', ') + `, boosted peak ${peakDb(loud).toFixed(2)} dBFS`,
+    });
+  }
+
+  // Loudness: BS.1770 reference (997 Hz sine at -6.02 dBFS = -9.03 LUFS mono),
+  // gating of silence, and reaching a target under the -1 dBFS ceiling.
+  {
+    const tone = (n, amp, f = 997) => Int16Array.from({ length: n }, (_, i) => Math.round(amp * 32768 * Math.sin((2 * Math.PI * f * i) / SR)));
+    const ref = integratedLoudness(tone(SR * 5, 0.5), SR);
+    const withGap = new Int16Array(SR * 10); withGap.set(tone(SR * 5, 0.5));
+    const gated = integratedLoudness(withGap, SR);
+    // Plucky test signal: decaying notes with sharp attacks, peak near full scale.
+    const L = SR * 8, x = new Int16Array(L);
+    for (let i = 0; i < L; i++) { const t = (i % (SR / 2)) / SR; x[i] = Math.round(30000 * Math.exp(-t * 12) * Math.sin(2 * Math.PI * 220 * i / SR)); }
+    const r = toLoudness(x, SR, -14);
+    let pk = 0; for (const v of r.pcm) pk = Math.max(pk, Math.abs(v));
+    const pkDb = 20 * Math.log10(pk / 32768);
+    const quiet = toLoudness(r.pcm, SR, -20);
+    results.push({
+      name: 'Loudness: BS.1770 reference, gating, target reached under the ceiling',
+      pass: Math.abs(ref - -9.03) < 0.05 && Math.abs(gated - -9.16) < 0.06 && // ffmpeg ebur128: -9.2 (blocks at the edge count)
+         Math.abs(r.after - -14) < 0.1 && pkDb <= -0.99
+        && r.reductionDb > 1 && Math.abs(quiet.after - -20) < 0.1 && quiet.reductionDb < 0.01 && x.length === r.pcm.length,
+      detail: `ref ${ref.toFixed(2)} LUFS, with silence ${gated.toFixed(2)}, plucks ${r.before.toFixed(1)} → ${r.after.toFixed(2)} LUFS (+${r.gainDb.toFixed(1)} dB, limit ${r.reductionDb.toFixed(1)} dB, peak ${pkDb.toFixed(2)} dBFS), down to ${quiet.after.toFixed(2)}`,
     });
   }
 

@@ -1,5 +1,5 @@
 // Editor (DESIGN.md §5.7): waveform with 1×/4×/16× zoom, selection, and the
-// tools crop, gain, normalize and reduce hiss. The session's edits are kept as
+// tools crop, gain, level (normalize or loudness), reduce hiss and EQ. The session's edits are kept as
 // a list of steps applied in order to the audio as it was opened; the result
 // is saved after every change. Any step can be removed (the rest are applied
 // again) until the editor is left.
@@ -13,6 +13,7 @@ import { computePeaks, drawWaveform, drawBars, barGrid } from './waveform.js';
 import { crop, applyGain, normalize, peakDb } from './edit-ops.js';
 import { reduceNoise, quietestRegion } from './denoise.js';
 import { FLAT, EQ_PRESETS, isFlat, applyEq, createEqChain, detectHum } from './eq.js';
+import { integratedLoudness, toLoudness } from './loudness.js';
 import { $, $$, escapeHtml, toast } from '../util/dom.js';
 
 const ZOOMS = [1, 4, 16];
@@ -39,7 +40,12 @@ let busyFlag = false;
 let onCloseCb = null;
 let grid = null; // { first, beat, perBar } in seconds of this audio, when the take has a tempo
 const SNAPS = { free: 'Free', beat: 'Beat', bar: 'Bar' };
-const TOOLS = { crop: 'Crop', gain: 'Gain', normalize: 'Normalize', hiss: 'Hiss', eq: 'EQ' };
+const TOOLS = { crop: 'Crop', gain: 'Gain', level: 'Level', hiss: 'Hiss', eq: 'EQ' };
+// Level: normalize the peak, or bring the loudness to a target (LUFS).
+const LEVELS = { peak: 'Peak', '-18': '−18 LUFS', '-16': '−16 LUFS', '-14': '−14 LUFS' };
+const HEAVY_LIMIT_DB = 6;
+let lufsCache = { pcm: null, value: NaN }; // loudness of the current audio
+let levelCache = { pcm: null, level: null, result: null }; // the Level result being tried
 const EQ_RANGES = { low: [30, 150, 5], warmth: [-6, 6, 0.5], presence: [-6, 9, 0.5] };
 const EQ_NAMES = { low: 'Low cut', warmth: 'Warmth', presence: 'Presence' };
 let eqSet = { ...FLAT }; // EQ being tried, not applied yet
@@ -90,6 +96,8 @@ function close() {
   const saved = rec;
   root.innerHTML = '';
   root = rec = pcm = base = null;
+  lufsCache = { pcm: null, value: NaN };
+  levelCache = { pcm: null, level: null, result: null };
   steps = [];
   states = [];
   peaksCache.clear();
@@ -141,6 +149,11 @@ function markup() {
             <label class="gain"><output class="e-gain-out">0 dB</output>
               <input class="e-gain" type="range" min="-20" max="20" step="0.5" value="0" aria-label="Gain in dB">
             </label>
+          </div>
+          <div class="e-opt" data-for="level" hidden>
+            <div class="segmented e-level" role="radiogroup" aria-label="Level">
+              ${Object.entries(LEVELS).map(([k, l]) => `<button class="btn" data-level="${k}" role="radio">${l}</button>`).join('')}
+            </div>
           </div>
           <div class="e-opt" data-for="hiss" hidden>
             <div class="segmented e-hiss-amt" role="radiogroup" aria-label="Hiss reduction strength">
@@ -213,6 +226,7 @@ function bind() {
     setEq(set);
   }));
   $$('[data-hiss]', root).forEach((b) => b.addEventListener('click', () => { settings.set('editor.hiss', b.dataset.hiss); render(); }));
+  $$('[data-level]', root).forEach((b) => b.addEventListener('click', () => { stopPlayback(); settings.set('editor.level', b.dataset.level); render(); }));
   $('.e-apply', root).addEventListener('click', () => { const a = action(); if (a.run) a.run(); });
 
   const c = $('.e-wave', root);
@@ -245,7 +259,34 @@ async function loadGrid() {
   grid = barGrid(take, TIME_SIGS, shift);
 }
 
-const tool = () => (TOOLS[settings.get('editor.tool', 'crop')] ? settings.get('editor.tool', 'crop') : 'crop');
+const tool = () => {
+  const t = settings.get('editor.tool', 'crop');
+  return t === 'normalize' ? 'level' : TOOLS[t] ? t : 'crop';
+};
+const levelChoice = () => (LEVELS[settings.get('editor.level', '-16')] ? settings.get('editor.level', '-16') : '-16');
+
+/** Loudness of the current audio (LUFS), measured once per edit. */
+function currentLufs() {
+  if (lufsCache.pcm !== pcm) lufsCache = { pcm, value: integratedLoudness(pcm, rec.sampleRate) };
+  return lufsCache.value;
+}
+
+/**
+ * The Level result for the current audio and choice: { pcm, before, after,
+ * gainDb, reductionDb }, worked out once and kept for Play and Apply.
+ */
+function levelResult() {
+  const level = levelChoice();
+  if (levelCache.pcm === pcm && levelCache.level === level) return levelCache.result;
+  const result = level === 'peak'
+    ? { pcm: normalize(pcm, -1), reductionDb: 0 }
+    : toLoudness(pcm, rec.sampleRate, +level);
+  levelCache = { pcm, level, result };
+  return result;
+}
+const levelReady = () => levelCache.pcm === pcm && levelCache.level === levelChoice();
+let levelTimer = 0;
+const minus = (t) => t.replace('-', '−');
 const wholeSelected = () => sel.a <= 0.0005 && sel.b >= dur() - 0.0005;
 
 /** Change the EQ being tried: controls, the live preview, the panel. */
@@ -296,15 +337,36 @@ function action() {
         run: () => addStep({ kind: 'gain', db }, resetGain),
       };
     }
-    case 'normalize': {
+    case 'level': {
       const p = peakDb(pcm);
-      if (!Number.isFinite(p)) return { label: 'Normalize', hint: 'The track is silent.' };
-      const d = -1 - p;
-      return {
-        label: 'Normalize to −1 dBFS',
-        hint: Math.abs(d) < 0.05 ? 'Already at −1 dBFS.' : `Brings the loudest point to just below clipping (${d > 0 ? '+' : ''}${d.toFixed(1)} dB on the whole track). Reduce hiss first.`,
-        run: Math.abs(d) < 0.05 ? undefined : () => addStep({ kind: 'normalize' }),
-      };
+      if (!Number.isFinite(p)) return { label: 'Level', hint: 'The track is silent.' };
+      const level = levelChoice();
+      if (level === 'peak') {
+        const d = -1 - p;
+        return {
+          label: 'Normalize to −1 dBFS',
+          hint: Math.abs(d) < 0.05 ? 'Already at −1 dBFS. To make it sound louder, pick a LUFS target.'
+            : `Turns the whole track ${d > 0 ? 'up' : 'down'} ${Math.abs(d).toFixed(1)} dB so the loudest point is just below clipping.`,
+          run: Math.abs(d) < 0.05 ? undefined : () => addStep({ kind: 'normalize' }),
+        };
+      }
+      const target = +level;
+      const now = currentLufs();
+      const label = `Loudness to ${LEVELS[level]}`;
+      if (Math.abs(now - target) < 0.1) return { label, hint: `Already at ${LEVELS[level]}.` };
+      if (!levelReady()) {
+        // Work it out after this paint; it takes a moment on a long take.
+        clearTimeout(levelTimer);
+        levelTimer = setTimeout(() => { if (root && pcm) { levelResult(); render(); } }, 30);
+        return { label, hint: `Now ${minus(now.toFixed(1))} LUFS. Working out the limiting…` };
+      }
+      const r = levelResult();
+      const up = r.gainDb >= 0;
+      let hint = `Now ${minus(now.toFixed(1))} LUFS → ${minus(String(target))}: ${up ? '+' : '−'}${Math.abs(r.gainDb).toFixed(1)} dB`;
+      hint += r.reductionDb >= 0.1 ? `, the loudest notes limited by up to ${r.reductionDb.toFixed(1)} dB so they stay below −1 dBFS.` : ', no limiting needed.';
+      if (r.reductionDb > HEAVY_LIMIT_DB) hint += ' That much limiting can flatten the attacks; a lower target sounds more natural.';
+      hint += ' Play to hear it.';
+      return { label, hint, run: () => addStep({ kind: 'loudness', target }) };
     }
     case 'eq': {
       if (isFlat(eqSet)) return { label: 'Apply EQ', hint: 'Pick a preset or move a slider, then Play to hear it; changes are heard live.' };
@@ -396,6 +458,7 @@ function stepLabel(st) {
     case 'crop': return `Crop to ${fmt(st.a)} – ${fmt(st.b)}`;
     case 'gain': return `Gain ${st.db > 0 ? '+' : ''}${st.db.toFixed(1)} dB`;
     case 'normalize': return 'Normalize to −1 dBFS';
+    case 'loudness': return `Loudness to ${st.target} LUFS`.replace('-', '−');
     case 'eq': return `EQ: ${eqText(st)}`;
     case 'hiss': return `Reduce hiss ${st.db} dB${st.a != null ? ` (noise ${fmt(st.a)} – ${fmt(st.b)})` : ''}`;
   }
@@ -412,6 +475,11 @@ function applyStep({ rec: r, pcm: x }, st) {
   } else if (st.kind === 'gain') out = applyGain(x, st.db);
   else if (st.kind === 'eq') out = applyEq(x, sr, st);
   else if (st.kind === 'normalize') out = normalize(x, -1);
+  else if (st.kind === 'loudness') {
+    // Reuse what Play was trying, when it is for this same audio.
+    const c = levelCache;
+    out = c.pcm === x && c.level === String(st.target) ? c.result.pcm : toLoudness(x, sr, st.target).pcm;
+  }
   else if (st.kind === 'hiss') {
     const [a, b] = st.a == null ? quietestRegion(x, sr, 0.5) : [Math.round(st.a * sr), Math.round(st.b * sr)];
     out = reduceNoise(x, a, b, st.db);
@@ -561,6 +629,10 @@ function render() {
     const v = eqSet[k];
     $(`[data-eq-out="${k}"]`, root).textContent = k === 'low' ? (v ? `${v} Hz` : 'Off') : `${v > 0 ? '+' : ''}${(+v).toFixed(1)} dB`;
   }
+  $$('[data-level]', root).forEach((b) => {
+    b.classList.toggle('selected', b.dataset.level === levelChoice());
+    b.setAttribute('aria-checked', b.dataset.level === levelChoice());
+  });
   $$('[data-hum]', root).forEach((b) => {
     b.classList.toggle('selected', +b.dataset.hum === eqSet.hum);
     b.setAttribute('aria-checked', +b.dataset.hum === eqSet.hum);
@@ -587,9 +659,10 @@ function render() {
   const db = previewDb();
   const meta = $('.e-meta', root);
   const after = p + db;
+  const lu = Number.isFinite(p) ? currentLufs() : NaN;
   meta.textContent = !Number.isFinite(p) ? 'Peak silent'
     : db ? `Peak ${p.toFixed(1)} → ${after > 0 ? '+' : ''}${after.toFixed(1)} dBFS${after >= 0 ? ' · clips' : ''}`
-    : `Peak ${p.toFixed(1)} dBFS`;
+    : `Peak ${minus(p.toFixed(1))} dBFS${Number.isFinite(lu) ? ` · ${minus(lu.toFixed(1))} LUFS` : ''}`;
   meta.classList.toggle('bad', Number.isFinite(p) && db !== 0 && after >= 0);
   draw();
 }
@@ -662,7 +735,9 @@ async function togglePlay() {
   const ctx = await holdAudio('editor');
   const from = cursor > sel.a && cursor < sel.b ? cursor : sel.a;
   const sr = rec.sampleRate;
-  const slice = int16ToFloat(pcm.subarray(Math.round(from * sr), Math.round(sel.b * sr)));
+  // On the Level tab, the result being tried is heard (same length and times).
+  const src16 = tool() === 'level' && Number.isFinite(peakDb(pcm)) ? levelResult().pcm : pcm;
+  const slice = int16ToFloat(src16.subarray(Math.round(from * sr), Math.round(sel.b * sr)));
   if (!slice.length) { releaseAudio('editor'); return; }
   // A gain still on the slider (not applied yet) is heard too.
   const g = 10 ** (previewDb() / 20);

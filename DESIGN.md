@@ -92,6 +92,7 @@ All data stays on the device.
   editor/edit-ops.js  crop, gain, normalize, fades (pure functions)
   editor/denoise.js   hiss reduction (spectral gating)
   editor/eq.js        EQ (low cut, warmth, presence, hum notches)
+  editor/loudness.js  LUFS measurement (BS.1770) and limiter
   storage/db.js       IndexedDB wrapper
   util/wav.js         WAV encode/decode
 /vendor/pdfjs/
@@ -340,6 +341,7 @@ Each score has a **score map**: the location of every row of music (system) and 
 - **Normalize:** scales the recording so its peak is at −1 dBFS.
 - **Reduce hiss:** spectral gating (`denoise.js`). Learns a noise profile from the selection, or from the quietest 0.5 s when everything is selected. Bins more than 9 dB above the profile pass; the rest are cut by 6, 10 or 15 dB, with the gain held for ±2 frames and smoothed over ±3 bins. FFT 2048 at 75% overlap.
 - **Layout:** a tab row (Crop, Gain, Normalize, Hiss) under the waveform picks the tool; its panel holds the tool's options, a line saying what Apply will do, and one Apply button labelled with the action (disabled when it would do nothing). Back and Undo stay in the header.
+- **Level** tab: Peak (normalize to −1 dBFS) or Loudness to −18/−16/−14 LUFS (`loudness.js`): integrated loudness per ITU-R BS.1770-4 (K-weighting, 400 ms blocks, −70 LUFS and −10 LU gates; matches ffmpeg ebur128), then gain plus a look-ahead limiter (5 ms look-ahead, 120 ms release, −1 dBFS sample-peak ceiling). The gain is found by the secant method so limiting losses are made up (within 0.05 LU). The panel shows the current loudness, the gain and the deepest limiting, and warns above 6 dB of limiting. Play on the Level tab plays the result; Apply reuses it. The header shows peak and LUFS.
 - **EQ:** (`eq.js`) low cut (Butterworth high-pass, off or 40–150 Hz), warmth (peaking 200 Hz, Q 0.8, ±6 dB), presence (peaking 3 kHz, Q 0.7, −6…+9 dB), hum (notches at 50 or 60 Hz × 1–4, Q 15). Presets Clearer, Less boom, Reduce hum (detects 50/60 Hz in the quietest second), Flat. Preview runs through BiquadFilterNodes that follow the sliders live; the edit applies the same RBJ biquads offline. If the result would clip, the track is scaled to a −1 dBFS peak.
 - **Edit list (session undo):** the session's edits are a list of steps (with their settings, times in the audio as it was before each step) applied in order to the audio as opened. The result is saved after every change. Removing any step applies the rest again from the original (a removed crop moves later steps' times back); Undo removes the last. Intermediate results are kept up to ~120 MB for quick removal. The list ends when the editor is left. Play includes a gain still on the slider.
 - **Implementation:** all edit operations are pure functions in `edit-ops.js` that take Int16 or Float32 data.

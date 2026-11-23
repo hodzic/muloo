@@ -357,6 +357,7 @@ Each score has a **score map**: the location of every row of music (system) and 
   - Sharing uses `navigator.share({ files, title })`. If file sharing isn't supported, the file is downloaded instead.
   - The file is named `MuLoo <name> <date>.m4a`.
   - The share sheet offers either the full recording or only the A/B loop region.
+  - **Video with a title card** (`library/video.js`), for apps that only take photos and videos (e.g. a Google Photos album): a 1280×720 still card (title, up to two lines; subtitle; bottom line, default "Recorded <date> · MuLoo"; editable, previewed) at 1 fps with a keyframe every 10 s, H.264 (VP9/AV1 fallback) plus AAC (Opus fallback) in MP4 via WebCodecs and mp4-muxer. The file's creation time is the recording's, so photo apps sort it by when it was played. Offered only where the device can encode it.
 - **Export WAV:** a separate action for full-quality export.
 - **Storage display:** settings show storage used and available, via `navigator.storage.estimate()`.
 

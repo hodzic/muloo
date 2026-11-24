@@ -10,7 +10,7 @@
 
 import { getContext, holdAudio, releaseAudio } from '../audio/context.js';
 import { readLevel } from '../audio/input.js';
-import { loadPcm, getRecording, saveRecording, loadParts, mixFrom, mergeParts, deleteRecording, replacePcm } from '../storage/recordings.js';
+import { loadPcm, getRecording, saveRecording, loadParts, mixFrom, mergeParts, deleteRecording, replacePcm, deleteVideo } from '../storage/recordings.js';
 import { startRecording, stopRecording, isRecording, stopTime } from '../recorder/recorder.js';
 import { metronome, TIME_SIGS } from '../metronome/scheduler.js';
 import { settings } from '../storage/db.js';
@@ -18,7 +18,8 @@ import { int16ToFloat } from '../util/wav.js';
 import { encodeWav } from '../util/wav.js';
 import { computePeaks, drawWaveform, drawBars, barGrid } from '../editor/waveform.js';
 import { holdWakeLock, releaseWakeLock } from '../util/wakelock.js';
-import { openShareDialog, openDetailsDialog } from '../library/dialogs.js';
+import { openShareDialog, openDetailsDialog, openVideoDialog } from '../library/dialogs.js';
+import { playerVideo, fadeLevel } from '../library/video.js';
 import { getScore, openPdf } from '../scores/scores.js';
 import { loadMap } from '../scores/map-store.js';
 import { flatten } from '../scores/score-map.js';
@@ -62,6 +63,8 @@ let onCloseCb = null;
 let onEditCb = null;
 let follow = null; // { view, pdf, track } while the score re-scrolls with playback
 let colors = null;
+let film = null; // filmed take: { url, first } (first frame's time in the video, s)
+let fadeGain = null; // the video's fades, heard while playing
 
 const COLORS = () => {
   const s = getComputedStyle(document.documentElement);
@@ -94,7 +97,8 @@ function ensureAudioGraph() {
   gain = ctx.createGain();
   analyser = ctx.createAnalyser();
   analyser.fftSize = 2048;
-  source.connect(gain).connect(analyser).connect(ctx.destination);
+  fadeGain = ctx.createGain();
+  source.connect(gain).connect(fadeGain).connect(analyser).connect(ctx.destination);
   audio.addEventListener('play', onPlayState);
   audio.addEventListener('pause', onPlayState);
   // The loop seam is timed from animation frames, which stop with the screen
@@ -139,6 +143,7 @@ export async function openPlayer(host, id, { onClose, onEdit } = {}) {
   if (loop.on) audio.currentTime = loop.a;
 
   renderTitle();
+  loadFilm();
   $('.p-score', root).hidden = !(rec.scoreId && rec.scoreTrack?.length);
   $('.dur', root).textContent = fmt(duration);
   resizeCanvas();
@@ -188,6 +193,7 @@ export function closePlayer() {
     audio.load();
   }
   if (url) URL.revokeObjectURL(url);
+  dropFilm();
   releaseWakeLock('player');
   releaseAudio('player');
   if (root) root.innerHTML = '';
@@ -268,6 +274,77 @@ function trackPosition(t) {
   return { playPos: k, frac: Math.max(0, Math.min(0.999, (t - tr[k][0]) / dur)), next, left: tr[k][0] + dur - t, beat: dur / m.beats };
 }
 
+// Filmed takes: the video plays muted alongside the audio element, following
+// its time and speed; fades are shown and heard as in the shared video.
+
+async function loadFilm() {
+  const r = rec;
+  $('.p-video-edit', root).hidden = !r.video;
+  if (!r.video) return;
+  try {
+    const f = await playerVideo(r);
+    if (rec !== r || !f) { if (f) URL.revokeObjectURL(f.url); return; }
+    film = f;
+    const el = $('.p-film-video', root);
+    el.src = f.url;
+    $('.p-film', root).hidden = false;
+    const ratio = r.video.width / r.video.height;
+    $('.p-film', root).classList.toggle('portrait', ratio < 1);
+  } catch (e) {
+    console.warn('Could not load the video', e);
+    toast(`Can't show the video: ${e.message}`);
+  }
+}
+
+function dropFilm() {
+  if (film) URL.revokeObjectURL(film.url);
+  film = null;
+  if (fadeGain) fadeGain.gain.value = 1;
+}
+
+function syncFilm() {
+  if (!film || !rec?.video) return;
+  const el = $('.p-film-video', root);
+  const v = rec.video;
+  const t = audio.currentTime;
+  const target = t + v.start - film.first;
+  const fade = fadeLevel(t, duration, v.fadeIn, v.fadeOut);
+  el.style.opacity = target < 0 ? 0 : fade;
+  const ctx = getContext();
+  if (Math.abs(fadeGain.gain.value - fade) > 0.002) fadeGain.gain.setTargetAtTime(fade, ctx.currentTime, 0.02);
+  if (el.readyState < 1 || el.seeking) return;
+  const end = el.duration || Infinity;
+  const at = Math.max(0, Math.min(end - 0.01, target));
+  if (!audio.paused) {
+    if (el.playbackRate !== audio.playbackRate) el.playbackRate = audio.playbackRate;
+    if (target >= end) { if (!el.paused) el.pause(); return; }
+    if (Math.abs(el.currentTime - at) > 0.15) el.currentTime = at;
+    if (el.paused && target >= 0) el.play().catch(() => {});
+  } else {
+    if (!el.paused) el.pause();
+    if (Math.abs(el.currentTime - at) > 0.04) el.currentTime = at;
+  }
+}
+
+async function editVideo() {
+  if (!rec?.video) return;
+  audio.pause();
+  flushSave();
+  const res = await openVideoDialog(rec);
+  if (!res || !rec) return;
+  if (res === 'remove') {
+    rec = await deleteVideo(rec);
+    dropFilm();
+    $('.p-film', root).hidden = true;
+    $('.p-film-video', root).removeAttribute('src');
+    $('.p-video-edit', root).hidden = true;
+    toast('Video removed; the audio is kept.');
+    return;
+  }
+  rec = { ...rec, video: { ...rec.video, ...res } };
+  flushSave();
+}
+
 async function editDetails() {
   const patch = await openDetailsDialog(rec);
   if (!patch || !rec) return;
@@ -290,10 +367,12 @@ function markup() {
         <button class="btn icon p-back" aria-label="Back to recordings">${svg('M15 5l-7 7 7 7')}</button>
         <button class="player-title p-details" aria-label="Rename or link to a score"><div class="p-name rec-name"></div><div class="p-meta rec-meta"></div></button>
         <button class="btn icon p-score" aria-label="Show the score" aria-pressed="false" hidden>${svg('M9 18V5l11-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM20 16a3 3 0 1 1-6 0 3 3 0 0 1 6 0z')}</button>
+        <button class="btn icon p-video-edit" aria-label="Video: fades and title page" hidden>${svg('M3 6h13v12H3zM16 10l5-3v10l-5-3')}</button>
         <button class="btn icon p-edit" aria-label="Edit">${svg('M6 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM6 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7.5 7.5L20 18M7.5 16.5L20 6')}</button>
         <button class="btn icon p-share" aria-label="Share">${svg('M12 3v12M7 8l5-5 5 5M5 13v7h14v-7')}</button>
       </div>
       <div class="p-score-view" hidden></div>
+      <div class="p-film" hidden><video class="p-film-video" muted playsinline preload="auto"></video></div>
       <div class="wave-wrap"><canvas class="wave" aria-label="Waveform. Tap to seek, drag to set the loop."></canvas><div class="p-countin-show" hidden></div></div>
       <div class="out-level" aria-hidden="true"><div class="out-fill"></div></div>
       <div class="times"><span class="pos">0:00.0</span><span class="loop-times"></span><span class="dur"></span></div>
@@ -356,6 +435,7 @@ function bind() {
     closePlayer();
     cb?.(id);
   });
+  $('.p-video-edit', root).addEventListener('click', editVideo);
   $('.p-overdub', root).addEventListener('click', () => (overdub ? stopOverdub(!!overdub.stopping) : startOverdub()));
   // The count-in, big over the waveform.
   offCountIn?.();
@@ -962,6 +1042,7 @@ function frame() {
     }
   }
 
+  syncFilm();
   $('.pos', root).textContent = fmt(t);
   if (follow) follow.view.setPosition(trackPosition(t));
   if (align?.rest) {

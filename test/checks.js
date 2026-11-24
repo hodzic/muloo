@@ -6,6 +6,8 @@ import { crop, applyGain, normalize, peak, peakDb, mixLayers } from '../js/edito
 import { reduceNoise, quietestRegion } from '../js/editor/denoise.js';
 import { applyEq, detectHum } from '../js/editor/eq.js';
 import { integratedLoudness, toLoudness } from '../js/editor/loudness.js';
+import { fadeLevel } from '../js/library/video.js';
+import { fitSize } from '../js/recorder/camera.js';
 import { analyzeBeats, stringPairs, beatTarget } from '../js/tuner/beats.js';
 import { flatten, parseOrder, formatOrder, playOrder, orderFromMarkers, barPlan, validateMap } from '../js/scores/score-map.js';
 import { detectPage } from '../js/scores/detect.js';
@@ -390,6 +392,20 @@ export function runDspChecks() {
       name: 'Tuner auto mode: nearest string, far offsets, octave harmonic, hysteresis',
       pass: bad.length === 0,
       detail: bad.length ? bad.map(([n, r]) => `${n} → string ${r.string}, ${r.cents.toFixed(1)} ¢`).join('; ') : `${cases.length} cases`,
+    });
+  }
+
+  {
+    // Filmed takes: fades and the stored video size.
+    const len = 10;
+    const f = (t) => fadeLevel(t, len, 1, 2);
+    const fades = [[0, 0], [0.5, 0.5], [1, 1], [5, 1], [9, 0.5], [10, 0]].filter(([t, v]) => Math.abs(f(t) - v) > 1e-9);
+    const sizes = [[[1920, 1080], [1280, 720]], [[720, 1280], [720, 1280]], [[1080, 1920], [720, 1280]], [[641, 479], [642, 480]]]
+      .filter(([[w, h], e]) => fitSize(w, h).join() !== e.join());
+    results.push({
+      name: 'Video: S-curve fades in and out; stored size even, long side ≤ 1280',
+      pass: !fades.length && !sizes.length && fadeLevel(3, len) === 1,
+      detail: fades.length || sizes.length ? JSON.stringify({ fades, sizes: sizes.map(([s0]) => [s0, fitSize(...s0)]) }) : 'ok',
     });
   }
 

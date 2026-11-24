@@ -5,7 +5,7 @@ import { listScores } from '../scores/scores.js';
 import { encodeWav } from '../util/wav.js';
 import { encodeForSharing, pickFormat, shareFileName, shareOrDownload, download } from './export.js';
 import { withTag, tagFor, partFiles } from './import.js';
-import { pickVideoFormat, drawTitleCard, encodeTitleVideo } from './video.js';
+import { pickVideoFormat, drawTitleCard, encodeTitleVideo, encodeCameraVideo } from './video.js';
 import { $, escapeHtml, formatBytes, toast } from '../util/dom.js';
 
 const fmtDur = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -19,6 +19,22 @@ function makeDialog(html) {
   return d;
 }
 
+/** Title card text to start from: the linked score's title or the take's name, and its date. */
+async function defaultCard(rec) {
+  const score = rec.scoreId ? (await listScores().catch(() => [])).find((x) => x.id === rec.scoreId) : null;
+  const date = new Date(rec.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+  return { title: score?.title || rec.name, subtitle: '', footer: `Recorded ${date} · MuLoo` };
+}
+
+/** What the shared video of a filmed take adds: "2 s title page, fade in 1 s". */
+function filmExtras(v) {
+  const out = [];
+  if (v.title?.sec) out.push(`${v.title.sec} s title page`);
+  if (v.fadeIn) out.push(`fade in ${v.fadeIn} s`);
+  if (v.fadeOut) out.push(`fade out ${v.fadeOut} s`);
+  return out.join(', ');
+}
+
 /** Share a recording: compressed full take or A/B loop, or a WAV export. */
 export async function openShareDialog(rec) {
   const hasLoop = rec.loopA != null && rec.loopB != null && rec.loopB > rec.loopA;
@@ -28,9 +44,12 @@ export async function openShareDialog(rec) {
       <p class="muted share-name">${escapeHtml(rec.name)}</p>
       <p class="muted share-format">Checking formats…</p>
       ${rec.parts?.length ? `<label class="share-parts"><input type="checkbox" class="with-parts"> Include the ${rec.parts.length + 1} parts separately, so MuLoo can import them as parts (about twice the size; other apps play the mix)</label>` : ''}
-      <button class="btn primary wide" data-what="full">Share take (${fmtDur(durationSec(rec))})</button>
+      <button class="btn${rec.video ? '' : ' primary'} wide" data-what="full">${rec.video ? 'Share sound only' : 'Share take'} (${fmtDur(durationSec(rec))})</button>
       ${hasLoop ? `<button class="btn wide" data-what="loop">Share A/B loop (${fmtDur(rec.loopB - rec.loopA)})</button>` : ''}
       <button class="btn wide" data-what="wav">Export WAV · full quality (${formatBytes(44 + rec.lengthSamples * 2)})</button>
+      ${rec.video ? `<button class="btn primary wide" data-what="film">Share video (${fmtDur(durationSec(rec))})</button>
+      ${hasLoop ? `<button class="btn wide" data-what="film-loop">Share A/B loop as video (${fmtDur(rec.loopB - rec.loopA)})</button>` : ''}
+      <p class="muted share-film-note">${escapeHtml(filmExtras(rec.video) ? `The video has a ${filmExtras(rec.video)}.` : 'Fades and a title page: the video button in the player.')}</p>` : ''}
       <button class="btn wide share-video-open" hidden>Video with title card (for photo albums)…</button>
       <div class="share-video" hidden>
         <canvas class="share-video-preview" aria-label="Title card preview"></canvas>
@@ -51,12 +70,12 @@ export async function openShareDialog(rec) {
   });
 
   // Video with a title card: only where the device can encode one.
-  pickVideoFormat(rec.sampleRate).then(async (f) => {
+  // A filmed take shares its own video instead.
+  if (!rec.video) pickVideoFormat(rec.sampleRate).then(async (f) => {
     if (!f || !d.open) return;
-    const score = rec.scoreId ? (await listScores().catch(() => [])).find((x) => x.id === rec.scoreId) : null;
-    const date = new Date(rec.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
-    $('.v-title', d).value = score?.title || rec.name;
-    $('.v-footer', d).value = `Recorded ${date} · MuLoo`;
+    const card = await defaultCard(rec);
+    $('.v-title', d).value = card.title;
+    $('.v-footer', d).value = card.footer;
     const preview = () => drawTitleCard($('.share-video-preview', d), videoCard());
     d.querySelectorAll('.share-video input').forEach((i) => i.addEventListener('input', preview));
     const open = $('.share-video-open', d);
@@ -94,6 +113,17 @@ export async function openShareDialog(rec) {
         suffix = ' (loop)';
       }
       let result;
+      if (what === 'film' || what === 'film-loop') {
+        const loop = what === 'film-loop';
+        result = await encodeCameraVideo(rec, await loadMix(rec), {
+          ...(loop ? { from: rec.loopA, to: rec.loopB } : {}),
+          onProgress: (f) => progress(f, `Making the video… ${Math.round(f * 100)}%`),
+        });
+        const name = shareFileName(rec, result.ext, loop ? ' (loop)' : '');
+        progress(1, `${name} · ${formatBytes(result.blob.size)}`);
+        await deliver(d, result.blob, name, rec.name);
+        return;
+      }
       if (what === 'video') {
         result = await encodeTitleVideo(pcm, rec.sampleRate, videoCard(), {
           createdAt: rec.createdAt,
@@ -159,6 +189,76 @@ async function deliver(d, blob, name, title) {
       }
     };
   }
+}
+
+const FADES = [0, 0.5, 1, 2, 3];
+const TITLE_SECS = [0, 1, 2, 3];
+
+/**
+ * A filmed take's video settings: fade in, fade out and a title page in
+ * front. Resolves to { fadeIn, fadeOut, title }, 'remove' (drop the video,
+ * keep the audio), or null if cancelled.
+ */
+export async function openVideoDialog(rec) {
+  const v = rec.video;
+  const opts = (list, cur, none) => list.map((x) => `<option value="${x}"${x === cur ? ' selected' : ''}>${x ? `${x} s` : none}</option>`).join('');
+  const d = makeDialog(`
+    <form method="dialog" class="settings video-dialog">
+      <h2>Video</h2>
+      <p class="muted">For the shared video. To trim it, crop the take with the scissors: the video is cropped with the sound.</p>
+      <div class="row">
+        <label>Fade in <select class="v-in">${opts(FADES, v.fadeIn ?? 0, 'None')}</select></label>
+        <label>Fade out <select class="v-out">${opts(FADES, v.fadeOut ?? 0, 'None')}</select></label>
+      </div>
+      <label>Title page in front <select class="v-sec">${opts(TITLE_SECS, v.title?.sec ?? 0, 'None')}</select></label>
+      <div class="v-card" hidden>
+        <canvas class="share-video-preview" aria-label="Title page preview"></canvas>
+        <label>Title <input class="v-title" type="text" maxlength="120"></label>
+        <label>Subtitle <input class="v-subtitle" type="text" maxlength="120" placeholder="e.g. the artist"></label>
+        <label>Bottom line <input class="v-footer" type="text" maxlength="120"></label>
+      </div>
+      <div class="row">
+        <button class="btn wide" value="cancel" formnovalidate>Cancel</button>
+        <button class="btn primary wide" value="save">Save</button>
+      </div>
+      <button type="button" class="btn wide v-remove">Remove the video, keep the sound (${formatBytes(v.bytes ?? 0)})</button>
+    </form>`);
+  const card = v.title ?? await defaultCard(rec);
+  $('.v-title', d).value = card.title;
+  $('.v-subtitle', d).value = card.subtitle ?? '';
+  $('.v-footer', d).value = card.footer ?? '';
+  const read = () => ({
+    title: $('.v-title', d).value.trim() || rec.name,
+    subtitle: $('.v-subtitle', d).value.trim(),
+    footer: $('.v-footer', d).value.trim(),
+  });
+  const render = () => {
+    const on = +$('.v-sec', d).value > 0;
+    $('.v-card', d).hidden = !on;
+    if (on) drawTitleCard($('.v-card canvas', d), read(), v.width, v.height);
+  };
+  $('.v-card canvas', d).classList.toggle('portrait', v.height > v.width);
+  d.querySelectorAll('.v-card input, .v-sec').forEach((i) => i.addEventListener('input', render));
+  render();
+  let removed = false;
+  $('.v-remove', d).onclick = () => {
+    if (!confirm('Remove this take’s video? The sound stays.')) return;
+    removed = true;
+    d.close();
+  };
+  return new Promise((resolve) => {
+    d.addEventListener('close', () => {
+      if (removed) { resolve('remove'); return; }
+      if (d.returnValue !== 'save') { resolve(null); return; }
+      // Fades longer than half the take are shortened when the video is made.
+      const sec = +$('.v-sec', d).value;
+      resolve({
+        fadeIn: +$('.v-in', d).value,
+        fadeOut: +$('.v-out', d).value,
+        title: sec ? { sec, ...read() } : null,
+      });
+    });
+  });
 }
 
 /**

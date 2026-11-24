@@ -64,6 +64,12 @@ const HELP = {
       <li>With the metronome already clicking, the count-in starts at the next bar line, in time with it, and Stop lets the take run on to the end of the bar, so it ends on the bar line (tap Stop now to cut it there and then).</li>
       <li>When Stop ends the take right away, its last 0.3 s is dropped, so the knock of your tap isn't in it.</li>
       <li>A take recorded with a score remembers where you were, so the score can scroll along on playback.</li>
+    </ul>
+    <h3>Filming</h3>
+    <ul>
+      <li>The camera button beside Record films the take too. A preview shows in the panel; the round arrows switch between the front and back camera. Turn it off with the same button.</li>
+      <li>The sound is recorded exactly as without the camera; the picture is kept in step with it. Video takes about 15 MB a minute.</li>
+      <li>In Recordings the video plays with the take. Crop it in the editor (the video is cropped with the sound); the video button adds fades and a title page; Share sends it as an MP4.</li>
     </ul>`,
 
   scores: `
@@ -107,6 +113,7 @@ const HELP = {
       <li>The scissors on the original or a part open the editor for just that track: crop it, change its gain or normalize it. Everything stays lined up: cropping the start of a part keeps the rest of it where it was, and cropping the start of the original moves all parts along with it. E.g. after a loop overdub, trim the original's last repeat. Back returns to the take.</li>
       <li>The scissors at the top edit the whole take: the parts are mixed into one track first.</li>
       <li>Tap a track's name to rename it.</li>
+      <li>Filmed takes: the video plays above the waveform, following play, seeks, the loop and the speed. The video button sets a fade in and fade out (picture and sound) and a title page in front for 1–3 s (with a preview); they are added when you share the video, and shown while playing. Crop with the scissors: the video is cropped with the sound. Share › Share video makes an MP4 (Share A/B loop as video for just the loop); Share sound only sends the audio. The video button can also remove the video and keep the sound, to save space.</li>
       <li>Takes recorded with the metronome show numbered bar lines on the waveform (and beat lines while lining up a part); Bars beside Loop turns them off or on.</li>
       <li>Each part has its own volume; × deletes a part. If parts together get too loud, the whole mix is turned down instead of distorting. Sharing sends the mix (Video with title card makes an MP4 of the take with a still title card, for photo albums like Google Photos that don’t take audio files; it is dated with the recording’s date); tick “Include the parts separately” to also send each part, so a friend’s MuLoo imports the take with its parts (other apps still play the mix). Editing mixes the parts into one track first.</li>
     </ul>

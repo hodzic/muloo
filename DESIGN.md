@@ -87,6 +87,7 @@ All data stays on the device.
   scores/scores.js    PDF import, storage, PDF.js rendering
   recorder/capture-worklet.js   AudioWorkletProcessor: raw PCM capture
   recorder/recorder.js
+  recorder/camera.js
   player/player.js
   editor/waveform.js  peak computation + canvas drawing
   editor/edit-ops.js  crop, gain, normalize, fades (pure functions)
@@ -312,6 +313,14 @@ Each score has a **score map**: the location of every row of music (system) and 
   - Store chunks during recording so a crash doesn't lose the whole take.
 - **On stop:** create a recording entry named with the date and time, then open it in the Player.
 
+### 5.5a Filming (camera video with a take)
+
+- **Where:** a camera toggle beside Record on the Practice tab (only where WebCodecs `VideoEncoder`/`VideoDecoder` and `MediaStreamTrackProcessor` exist). With it on, the camera opens while the tab is shown, with a preview in the stage (mirrored for the front camera) and a front/back switch. Filming keeps going if you leave the tab mid-take.
+- **Capture (`recorder/camera.js`):** the audio path is unchanged. A clone of the camera track goes through `MediaStreamTrackProcessor` into a `VideoEncoder` (H.264 Main/Baseline 3.1, else VP9, else AV1; must also decode; 2 Mbps, 30 fps, realtime, a keyframe every 2 s; long side at most 1280). Frame times are against the take's first audio sample (`firstAt`, performance.now()), using the frame's capture time when it is on that clock, else anchored to the first frame's arrival; frames before the take starts are dropped, and frames are dropped while the encoder is behind. If the phone turns mid-take, frames are fitted into the take's frame. Encoded frames are stored about once a second (`videoChunks`); `rec.video` (codec, size, avcC description) is saved as soon as the encoder describes the stream, so a crash keeps a playable video.
+- **Player:** the stored frames are packed into an MP4 without re-encoding (mp4-muxer) and played in a muted `<video>` that follows the audio element: its time (audio time + `video.start` − first frame), speed, play/pause, seeks and loop jumps (re-seek when off by more than 0.15 s). Fades are shown (opacity) and heard (a gain node after the loop-seam gain).
+- **Editing:** crop in the editor crops the video too (a crop's start adds to `video.start`; undo or removing the step recomputes it). The video button in the player sets fade in and fade out (0.5–3 s; S-curve, picture to and from black and the sound with it) and a title page in front (1–3 s; the title card of 5.8 at the video's size, with silence under it). These are applied only when the video is shared. The same dialog can remove the video and keep the sound.
+- **Share:** "Share video" (and the A/B loop as video) decodes from the keyframe before the start, fades on a canvas where needed, encodes again (2.5 Mbps, keyframes every 2 s) with the mixed audio (AAC or Opus) into MP4, dated with the take. "Share sound only" gives the usual audio file.
+
 ### 5.6 Player
 
 - **Playback path:**
@@ -363,14 +372,15 @@ Each score has a **score map**: the location of every row of music (system) and 
 - **Export WAV:** a separate action for full-quality export.
 - **Storage display:** settings show storage used and available, via `navigator.storage.estimate()`.
 
-## 6. Data model (IndexedDB, db `muloo`, v1)
+## 6. Data model (IndexedDB, db `muloo`, v2)
 
 | Store | Key | Fields |
 |---|---|---|
 | `scores` | `id` (uuid) | `title, fileName, blob, pdfHash, pageCount, lastPage, createdAt, lastOpenedAt` |
 | `scoreMaps` | `pdfHash` | `map` (JSON as in 5.4a), `verified: bool`, `updatedAt` |
-| `recordings` | `id` (uuid) | `name, createdAt, sampleRate, lengthSamples, scoreId?, startMeasure?, tempo?, timeSig?, firstBeatSec?, loopA?, loopB?, speed?` |
+| `recordings` | `id` (uuid) | `name, createdAt, sampleRate, lengthSamples, scoreId?, startMeasure?, tempo?, timeSig?, firstBeatSec?, loopA?, loopB?, speed?, video?` (`video`: `codec, mux, width, height, description?, start, bytes, fadeIn?, fadeOut?, title?`) |
 | `pcmChunks` | `[recordingId, index]` | `data: Int16Array` (about 1 s of audio per chunk) |
+| `videoChunks` (v2) | `[recordingId, index]` | `frames: [{ ts (µs from the take's first sample), key, data: Uint8Array }]`, about 1 s per row |
 | `settings` | `key` | `value`. Holds the A4 reference, tuning preset, metronome state, input device and gain, and the last tab. |
 
 On first launch, call `navigator.storage.persist()`.

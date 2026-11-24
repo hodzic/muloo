@@ -19,11 +19,29 @@ export async function deleteRecording(id) {
   const rec = await get('recordings', id);
   for (const p of rec?.parts ?? []) await deleteRecording(p.id);
   await del('pcmChunks', chunkRange(id));
+  await del('videoChunks', chunkRange(id));
   await del('recordings', id);
 }
 
 export const putChunk = (recordingId, index, data) => put('pcmChunks', { recordingId, index, data });
 export const deleteChunk = (recordingId, index) => del('pcmChunks', [recordingId, index]);
+
+// Camera video (rec.video): encoded frames, about a second per row:
+// { recordingId, index, frames: [{ ts (µs from the take's first sample), key, data }] }.
+export const putVideoChunk = (recordingId, index, frames) => put('videoChunks', { recordingId, index, frames });
+
+/** All encoded video frames of take `id`, in order. */
+export async function loadVideoFrames(id) {
+  return (await getAll('videoChunks', chunkRange(id))).flatMap((c) => c.frames);
+}
+
+/** Drop a take's video, keeping the audio. Resolves to the saved recording. */
+export async function deleteVideo(rec) {
+  await del('videoChunks', chunkRange(rec.id));
+  const { video, ...rest } = rec;
+  await put('recordings', rest);
+  return rest;
+}
 
 export async function loadChunks(id) {
   return (await getAll('pcmChunks', chunkRange(id))).map((c) => c.data);
@@ -104,6 +122,9 @@ export async function duplicateRecording(rec) {
   }
   const copy = { ...rec, id, name: `${rec.name} (copy)`.slice(0, 120), createdAt: now, ...(rec.parts ? { parts } : {}) };
   delete copy.recovered;
+  if (rec.video) {
+    for (const c of await getAll('videoChunks', chunkRange(rec.id))) await put('videoChunks', { ...c, recordingId: id });
+  }
   return replacePcm(copy, await loadPcm(rec.id));
 }
 
@@ -112,7 +133,7 @@ export async function wavBlob(rec) {
 }
 
 export const durationSec = (rec) => rec.lengthSamples / rec.sampleRate;
-export const sizeBytes = (rec) => rec.lengthSamples * 2;
+export const sizeBytes = (rec) => rec.lengthSamples * 2 + (rec.video?.bytes ?? 0);
 
 /**
  * Takes left in the 'recording' state by a crash or a closed tab: keep the

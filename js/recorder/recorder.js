@@ -14,6 +14,7 @@ import { metronome } from '../metronome/scheduler.js';
 import { floatToInt16 } from '../util/wav.js';
 import { saveRecording, putChunk, deleteChunk, deleteRecording } from '../storage/recordings.js';
 import { holdWakeLock, releaseWakeLock } from '../util/wakelock.js';
+import { captureVideo } from './camera.js';
 
 export const MAX_SECONDS = 15 * 60;
 // A take starts this long before the first beat after the count-in, so a
@@ -58,10 +59,11 @@ addEventListener('beforeunload', (e) => {
  * `startMetronome(countInBars)`, if given, starts the clicks instead (score
  * auto-scroll) and returns the first beat's AudioContext time. `score`
  * ({ scoreId, startMeasure }) links the take to a score. `partOf` makes it
- * an overdub part of that take (not listed on its own).
+ * an overdub part of that take (not listed on its own). `camera`, a camera
+ * MediaStreamTrack, records video with the take (camera.js).
  * Rejects with the getUserMedia error if the mic can't be opened.
  */
-export async function startRecording({ countInBars = 0, startMetronome = null, score = null, partOf = null } = {}) {
+export async function startRecording({ countInBars = 0, startMetronome = null, score = null, partOf = null, camera = null } = {}) {
   if (session) return session;
   const input = await acquireInput('recorder');
   const clicking = metronome.running;
@@ -116,8 +118,17 @@ export async function startRecording({ countInBars = 0, startMetronome = null, s
       lastChunk: null, // the last chunk handed to writeChunk
       reachedEnd: null,
       onStopped: null,
+      video: null, // camera capture, when filming
     };
     session = s;
+    if (camera) {
+      s.video = captureVideo(camera, rec, {
+        firstAt: () => s.firstAt,
+        // Saved as soon as it is known, so a crash keeps a playable video.
+        onMeta: (meta) => { if (session === s) { rec.video = meta; saveRecording(rec).catch(() => {}); } },
+        onError: (e) => console.warn('Video stopped', e),
+      });
+    }
     if (direct) {
       s.unsubscribe = onInputData((data, rate) => {
         if (!s.samples) s.rec.sampleRate = rate; // the track's real rate
@@ -153,6 +164,7 @@ export async function startRecording({ countInBars = 0, startMetronome = null, s
     emit();
     return s;
   } catch (e) {
+    session?.video?.stop().catch(() => {});
     session = null;
     if (node) disconnectInput(node);
     releaseInput('recorder');
@@ -315,6 +327,7 @@ export function stopRecording({ atBarEnd = false, tapped = false } = {}) {
     } else {
       s.unsubscribe();
     }
+    const video = s.video ? await s.video.stop().catch((e) => { console.warn(e); return null; }) : null;
     if (s.keepSamples != null && s.keepSamples < s.samples) dropTail(s, s.keepSamples);
     else if (s.accN) writeChunk(s, s.acc.slice(0, s.accN));
     await s.writes;
@@ -329,6 +342,8 @@ export function stopRecording({ atBarEnd = false, tapped = false } = {}) {
       return { rec: null, error: s.error, firstAt: null };
     }
     const rec = { ...s.rec, lengthSamples: s.writtenSamples, status: 'done' };
+    if (video) rec.video = video;
+    else delete rec.video;
     if (s.bars.length && s.startTime != null) {
       // Bar starts in seconds from the start of the take, for re-scrolling on playback.
       const end = rec.lengthSamples / rec.sampleRate;

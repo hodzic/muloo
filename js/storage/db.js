@@ -1,7 +1,7 @@
 // IndexedDB wrapper. Schema: DESIGN.md §6.
 
 const DB_NAME = 'muloo';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // 2: videoChunks
 
 let dbPromise = null;
 
@@ -16,8 +16,13 @@ export function openDB() {
       ensure('recordings', { keyPath: 'id' });
       ensure('pcmChunks', { keyPath: ['recordingId', 'index'] });
       ensure('settings', { keyPath: 'key' });
+      ensure('videoChunks', { keyPath: ['recordingId', 'index'] });
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      // A newer version opened in another tab: let it upgrade.
+      req.result.onversionchange = () => req.result.close();
+      resolve(req.result);
+    };
     req.onerror = () => reject(req.error);
     req.onblocked = () => console.warn('IndexedDB upgrade blocked by another tab');
   });

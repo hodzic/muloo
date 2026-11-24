@@ -10,6 +10,7 @@ import { startRecording, stopRecording, isRecording, isStopping, elapsedSec, onR
 import { settings, isQuotaError } from '../storage/db.js';
 import { $, escapeHtml, toast, navigate } from '../util/dom.js';
 import { openTabHelp } from '../util/tab-help.js';
+import { cameraSupported, openCamera } from '../recorder/camera.js';
 
 const METER_FLOOR_DB = -60;
 const CLIP_HOLD_MS = 2000;
@@ -23,6 +24,8 @@ let peakHoldAt = 0;
 let clipAt = -Infinity;
 let practiceStart = 0;
 let busy = false;
+let cam = null; // camera stream while filming is on
+let camOpening = null;
 
 const fmt = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const pct = (db) => Math.max(0, Math.min(100, ((db - METER_FLOOR_DB) / -METER_FLOOR_DB) * 100));
@@ -36,6 +39,8 @@ export function mount(el) {
       <div class="stage">
         <div class="rec-badge" hidden>● REC</div>
         <div class="count-in-overlay" hidden></div>
+        <div class="cam" hidden><video class="cam-video" muted playsinline autoplay></video>
+          <button class="btn icon cam-flip" aria-label="Switch between front and back camera"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5.3M20 12a8 8 0 0 1-14 5.3M18 3v4h-4M6 21v-4h4"/></svg></button></div>
         <div class="stage-timer">00:00</div>
         <div class="meter" aria-hidden="true">
           <div class="meter-track"><div class="meter-fill"></div><div class="meter-peak"></div></div>
@@ -52,6 +57,7 @@ export function mount(el) {
           <option value="1">1-bar count-in</option>
           <option value="2">2-bar count-in</option>
         </select>
+        <button class="btn cam-toggle" aria-pressed="false" aria-label="Film with the camera" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h13v12H3zM16 10l5-3v10l-5-3"/></svg></button>
         <button class="btn record">● Record</button>
       </div>
     </div>`;
@@ -61,6 +67,21 @@ export function mount(el) {
   $('.count-in-select', el).value = settings.get('recorder.countIn', 1);
   $('.count-in-select', el).addEventListener('change', (e) => settings.set('recorder.countIn', +e.target.value));
   $('.record', el).addEventListener('click', toggleRecording);
+  if (cameraSupported()) {
+    $('.cam-toggle', el).hidden = false;
+    $('.cam-toggle', el).addEventListener('click', () => {
+      if (isRecording()) return;
+      settings.set('recorder.camera', !filming());
+      if (filming()) openCam(); else closeCam();
+      renderCam();
+    });
+    $('.cam-flip', el).addEventListener('click', async () => {
+      if (isRecording()) return;
+      settings.set('recorder.facing', facing() === 'user' ? 'environment' : 'user');
+      closeCam();
+      await openCam();
+    });
+  }
 
   metronome.onChange(() => {
     if (metronome.running && !practiceStart) practiceStart = performance.now();
@@ -100,6 +121,7 @@ export function enter({ scoreId } = {}) {
   active = true;
   if (scoreId) useScore(scoreId);
   else enterScorePanel();
+  openCam();
   // The mic stays off until you record (Settings has the level check): opening
   // it takes audio focus on Android and interrupts other apps' playback.
   cancelAnimationFrame(raf);
@@ -110,8 +132,58 @@ export const showHelp = () => openTabHelp('practice');
 
 export function leave() {
   active = false;
+  // Filming carries on in the background until the take stops.
+  if (!isRecording()) closeCam();
   leaveScorePanel();
   cancelAnimationFrame(raf);
+}
+
+// Filming: the camera opens while the Practice tab is shown with filming on
+// (a preview in the stage) and its picture is recorded with the take.
+
+const filming = () => cameraSupported() && settings.get('recorder.camera', false);
+const facing = () => settings.get('recorder.facing', 'user');
+
+async function openCam() {
+  if (!filming() || cam || !active) return;
+  if (camOpening) return camOpening;
+  camOpening = (async () => {
+    try {
+      const stream = await openCamera(facing());
+      if (!active || !filming()) { stream.getTracks().forEach((t) => t.stop()); return; }
+      cam = stream;
+      const v = $('.cam-video', root);
+      v.srcObject = stream;
+      v.classList.toggle('mirror', facing() === 'user');
+      v.play().catch(() => {});
+    } catch (e) {
+      console.warn(e);
+      settings.set('recorder.camera', false);
+      toast(e.name === 'NotAllowedError' ? 'MuLoo needs camera access to film. Allow it in the browser’s site settings.' : `Could not open the camera (${e.name || e.message}).`);
+    } finally {
+      camOpening = null;
+      renderCam();
+    }
+  })();
+  return camOpening;
+}
+
+function closeCam() {
+  cam?.getTracks().forEach((t) => t.stop());
+  cam = null;
+  if (root) $('.cam-video', root).srcObject = null;
+  renderCam();
+}
+
+function renderCam() {
+  if (!root) return;
+  const on = filming();
+  const b = $('.cam-toggle', root);
+  b.classList.toggle('selected', on);
+  b.setAttribute('aria-pressed', on);
+  b.disabled = isRecording();
+  $('.cam', root).hidden = !cam;
+  $('.cam-flip', root).disabled = isRecording();
 }
 
 function micErrorText(e) {
@@ -147,10 +219,12 @@ async function toggleRecording() {
     } else {
       $('.mic-message', root).hidden = true;
       const countInBars = +$('.count-in-select', root).value;
+      if (filming() && !cam) await openCam();
+      const camera = filming() ? cam?.getVideoTracks()[0] ?? null : null;
       if (hasScore()) {
-        await startRecording({ countInBars, startMetronome: (bars) => startFollow(bars), score: scoreLink() });
+        await startRecording({ countInBars, startMetronome: (bars) => startFollow(bars), score: scoreLink(), camera });
       } else {
-        await startRecording({ countInBars });
+        await startRecording({ countInBars, camera });
       }
     }
   } catch (e) {
@@ -186,6 +260,8 @@ function renderRecording() {
   $('.count-in-select', root).disabled = rec;
   if (!rec) $('.count-in-overlay', root).hidden = true;
   document.body.classList.toggle('is-recording', rec);
+  if (!rec && !active) closeCam();
+  renderCam();
 }
 
 function loop(now) {

@@ -324,7 +324,7 @@ function action() {
       if (wholeSelected()) return { label: 'Crop to selection', hint: 'Select the part to keep: drag on the waveform.' };
       return {
         label: `Crop to ${fmt(sel.a)} – ${fmt(sel.b)}`,
-        hint: `Keeps ${fmt(sel.b - sel.a)} of ${fmt(dur())}; the rest is removed.`,
+        hint: `Keeps ${fmt(sel.b - sel.a)} of ${fmt(dur())}; the rest is removed${rec.video ? ', from the video too' : ''}.`,
         run: () => addStep({ kind: 'crop', a: sel.a, b: sel.b }),
       };
     case 'gain': {
@@ -472,6 +472,8 @@ function applyStep({ rec: r, pcm: x }, st) {
   if (st.kind === 'crop') {
     out = crop(x, st.a * sr, st.b * sr, sr, 10);
     nr = shiftParts(shiftAfterCrop(r, st.a, out.length / sr), st.a);
+    // A filmed take's video is cropped with it.
+    if (nr.video) nr = { ...nr, video: { ...nr.video, start: Math.round((nr.video.start + st.a) * 1e6) / 1e6 } };
   } else if (st.kind === 'gain') out = applyGain(x, st.db);
   else if (st.kind === 'eq') out = applyEq(x, sr, st);
   else if (st.kind === 'normalize') out = normalize(x, -1);
